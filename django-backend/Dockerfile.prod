@@ -1,0 +1,31 @@
+# Usa l'immagine ufficiale di Python
+FROM python:3.11-slim
+
+# Imposta la directory di lavoro
+WORKDIR /app
+
+# Imposta variabili d'ambiente
+ENV PYTHONDONTWRITEBYTECODE 1
+ENV PYTHONUNBUFFERED 1
+
+# Installa le dipendenze di sistema necessarie
+RUN apt-get update && apt-get install -y \
+    gcc \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copia il file requirements e installa le dipendenze Python
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copia il codice sorgente
+COPY . .
+
+# Crea la directory per i file statici
+RUN python manage.py collectstatic --noinput
+
+# Espone la porta su cui gunicorn ascolterà
+EXPOSE 8000
+
+# Comando per avviare l'applicazione
+CMD ["gunicorn", "--bind", "0.0.0.0:8000", "bookshelf.wsgi:application"]

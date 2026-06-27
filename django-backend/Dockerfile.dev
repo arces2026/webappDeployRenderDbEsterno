@@ -22,4 +22,4 @@ COPY . .
 EXPOSE 8000
 
 # Definisce il comando predefinito per avviare il server di sviluppo Django
-CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
+CMD ["sh", "-c", "python manage.py migrate && gunicorn bookshelf.wsgi:application --bind 0.0.0.0:8000"]

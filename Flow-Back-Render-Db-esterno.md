@@ -175,7 +175,7 @@ Modifica il tuo `settings.py` per leggere il database da una variabile d'ambient
 
 ```python
 import os
-import dj_database_url
+# import dj_database_url
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -190,12 +190,27 @@ DEBUG = os.environ.get('DEBUG', 'False') == 'True'
 ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 
 # Database configuration for PostgreSQL
+# this requires dj_database_url
+# DATABASES = { # this requires dj_database_url
+#     'default': dj_database_url.config(
+#         default='sqlite:///db.sqlite3',
+#         conn_max_age=600,
+#         conn_health_checks=True,
+#     )
+# }
+
 DATABASES = {
-    'default': dj_database_url.config(
-        default='sqlite:///db.sqlite3',
-        conn_max_age=600,
-        conn_health_checks=True,
-    )
+    "default": {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": os.getenv("DB_NAME"),
+        "USER": os.getenv("DB_USER"),
+        "PASSWORD": os.getenv("DB_PASSWORD"),
+        "HOST": os.getenv("DB_HOST"),
+        "PORT": os.getenv("DB_PORT", "5432"),
+        "OPTIONS": {
+            "sslmode": "require",  # Neon requires SSL
+        },
+    }
 }
 
 # Static files (CSS, JavaScript, Images)
