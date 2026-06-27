@@ -1,8 +1,8 @@
 #!/bin/bash
 # entrypoint.sh
 
-echo "=== Installando dipendenze ==="
-pip install -r requirements.txt
+# echo "=== Installando dipendenze ==="
+# pip install -r requirements.txt
 
 echo "=== Eseguendo migrazioni ==="
 python manage.py migrate
@@ -24,4 +24,4 @@ else
 fi
 
 echo "=== Avviando Gunicorn ==="
-gunicorn --bind 0.0.0.0:8000 your_project.wsgi:application
+gunicorn --bind 0.0.0.0:8000 bookshelf.wsgi:application
