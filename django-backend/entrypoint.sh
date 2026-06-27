@@ -24,4 +24,8 @@ else
 fi
 
 echo "=== Avviando Gunicorn ==="
-gunicorn --bind 0.0.0.0:8000 bookshelf.wsgi:application
+# gunicorn --bind 0.0.0.0:8000 bookshelf.wsgi:application
+gunicorn --bind 0.0.0.0:${PORT:-8000} bookshelf.wsgi:application
+
+echo "=== Testing wsgi import ==="
+python -c "import your_project.wsgi" && echo "OK" || echo "FAILED"
