@@ -29,6 +29,9 @@
     - [6.2 Configurare le Variabili d'Ambiente di Vue.js](#62-configurare-le-variabili-dambiente-di-vuejs)
     - [6.3 Configurare `vue.config.js`](#63-configurare-vueconfigjs)
     - [6.4 Utilizzare `fetch` per le Chiamate API](#64-utilizzare-fetch-per-le-chiamate-api)
+      - [6.4.1 Creare il modulo API con `fetch`](#641-creare-il-modulo-api-con-fetch)
+      - [6.4.2 Esempio di utilizzo in un componente Vue](#642-esempio-di-utilizzo-in-un-componente-vue)
+      - [6.4.3 Gestione degli errori centralizzata](#643-gestione-degli-errori-centralizzata)
     - [6.5 Creare il `Dockerfile` per Vue.js](#65-creare-il-dockerfile-per-vuejs)
     - [6.6 Creare il file `.dockerignore` per Vue.js](#66-creare-il-file-dockerignore-per-vuejs)
     - [6.7 Caricare il codice su GitHub](#67-caricare-il-codice-su-github)
@@ -39,6 +42,9 @@
     - [7.4 Configurare le Variabili d'Ambiente](#74-configurare-le-variabili-dambiente)
     - [7.5 Avviare il Deploy](#75-avviare-il-deploy)
   - [🌐 Configurazione CORS per il Collegamento Frontend-Backend](#-configurazione-cors-per-il-collegamento-frontend-backend)
+    - [1. Configurare CORS su Django](#1-configurare-cors-su-django)
+    - [2. Verificare che le richieste arrivino al backend corretto](#2-verificare-che-le-richieste-arrivino-al-backend-corretto)
+    - [3. Testare la connessione](#3-testare-la-connessione)
   - [📦 Strategie di Organizzazione del Repository](#-strategie-di-organizzazione-del-repository)
     - [Strategia 1: Repository Singolo (Monorepo)](#strategia-1-repository-singolo-monorepo)
     - [Strategia 2: Repository Separati](#strategia-2-repository-separati)
@@ -51,14 +57,14 @@
     - [Backend](#backend)
       - [Errore: "Database not found"](#errore-database-not-found)
       - [Errore: "Superuser already exists"](#errore-superuser-already-exists)
-      - [Errore: "ModuleNotFoundError: No module named 'your_project'"](#errore-modulenotfounderror-no-module-named-your_project)
+      - [Errore: "ModuleNotFoundError: No module named 'your\_project'"](#errore-modulenotfounderror-no-module-named-your_project)
       - [Errore: "psycopg2.OperationalError: could not connect to server"](#errore-psycopg2operationalerror-could-not-connect-to-server)
       - [Errore: "mysqlclient not found"](#errore-mysqlclient-not-found)
       - [Errore: "Access denied for user"](#errore-access-denied-for-user)
     - [Frontend](#frontend)
       - [Errore: "API calls fail with CORS error"](#errore-api-calls-fail-with-cors-error)
       - [Errore: "404 Not Found on page refresh"](#errore-404-not-found-on-page-refresh)
-      - [Errore: "VUE_APP_API_URL not defined"](#errore-vue_app_api_url-not-defined)
+      - [Errore: "VUE\_APP\_API\_URL not defined"](#errore-vue_app_api_url-not-defined)
       - [Errore: "Container fails to start"](#errore-container-fails-to-start)
   - [📊 Costo: Tutto Gratuito](#-costo-tutto-gratuito)
   - [🎯 Riepilogo](#-riepilogo)
@@ -555,8 +561,8 @@ Crea uno script `entrypoint.sh` nella root del progetto Django:
 #!/bin/bash
 # entrypoint.sh
 
-echo "=== Installando dipendenze ==="
-pip install -r requirements.txt
+# echo "=== Installando dipendenze ==="
+# pip install -r requirements.txt
 
 echo "=== Eseguendo migrazioni ==="
 python manage.py migrate
@@ -577,8 +583,13 @@ else
     echo "File dump.json non trovato, salto il caricamento"
 fi
 
+echo "=== Testing wsgi import ==="
+python -c "import bookshelf.wsgi" && echo "OK" || echo "FAILED"
 echo "=== Avviando Gunicorn ==="
-gunicorn --bind 0.0.0.0:8000 your_project.wsgi:application
+# gunicorn --bind 0.0.0.0:8000 bookshelf.wsgi:application
+gunicorn --bind 0.0.0.0:${PORT:-8000} bookshelf.wsgi:application
+
+
 ```
 
 Rendi eseguibile lo script:
