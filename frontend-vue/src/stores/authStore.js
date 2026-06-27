@@ -6,6 +6,7 @@ export const useAuthStore = defineStore('auth', () => {
   const token = ref(localStorage.getItem('token') || null)
   const refreshToken = ref(localStorage.getItem('refreshToken') || null)
   const user = ref(null)
+  const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
   const isAuthenticated = computed(() => !!token.value)
 
@@ -35,7 +36,8 @@ export const useAuthStore = defineStore('auth', () => {
 
   async function login(username, password) {
     try {
-      const response = await fetch('http://localhost:8000/api/v1/login/', {
+      // const response = await fetch('http://localhost:8000/api/v1/login/', {
+      const response = await fetch(`${API_BASE_URL}/api/v1/login/`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -57,7 +59,8 @@ export const useAuthStore = defineStore('auth', () => {
 
   async function register(userData) {
     try {
-      const response = await fetch('http://localhost:8000/api/v1/register/', {
+      // const response = await fetch('http://localhost:8000/api/v1/register/', {
+      const response = await fetch(`${API_BASE_URL}/api/v1/register/`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
