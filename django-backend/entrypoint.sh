@@ -23,9 +23,9 @@ else
     echo "File dump.json non trovato, salto il caricamento"
 fi
 
+echo "=== Testing wsgi import ==="
+python -c "import bookshelf.wsgi" && echo "OK" || echo "FAILED"
 echo "=== Avviando Gunicorn ==="
 # gunicorn --bind 0.0.0.0:8000 bookshelf.wsgi:application
 gunicorn --bind 0.0.0.0:${PORT:-8000} bookshelf.wsgi:application
 
-echo "=== Testing wsgi import ==="
-python -c "bookshelf.wsgi" && echo "OK" || echo "FAILED"
