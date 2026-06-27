@@ -5,8 +5,8 @@ FROM python:3.12-slim
 WORKDIR /app
 
 # Imposta variabili d'ambiente
-ENV PYTHONDONTWRITEBYTECODE 1
-ENV PYTHONUNBUFFERED 1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
 
 # Installa le dipendenze di sistema necessarie
 RUN apt-get update && apt-get install -y \
@@ -21,6 +21,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copia il codice sorgente
 COPY . .
 
+# Fix CRLF line endings and set executable permission
+RUN sed -i 's/\r//' entrypoint.sh && chmod +x entrypoint.sh
+
 # Crea la directory per i file statici
 RUN python manage.py collectstatic --noinput
 
@@ -28,4 +31,4 @@ RUN python manage.py collectstatic --noinput
 EXPOSE 8000
 
 # Comando per avviare l'applicazione
-CMD ["gunicorn", "--bind", "0.0.0.0:8000", "bookshelf.wsgi:application"]
+CMD ["./entrypoint.sh"]
