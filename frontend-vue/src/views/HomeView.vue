@@ -1,8 +1,9 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import ProductCard from '@/components/ProductCard.vue'
-import getProducts from '@/services/productService'
+// import getProducts from '@/services/productService'
 import { useCartStore } from '@/stores/cartStore'
+import { get } from '@/plugins/api'
 
 const cartStore = useCartStore()
 
@@ -46,7 +47,13 @@ const loading = ref(true)
 
 onMounted(async () => {
   try {
-    products.value = await getProducts()
+    // products.value = await getProducts()
+    const token = localStorage.getItem('access_token')
+    const data = await get('/api/v1/scarpe', {
+      Authorization: `Bearer ${token}`,
+    })
+    console.log({ dataresults: data.results })
+    products.value = data.results
   } catch (err) {
     error.value = 'Impossibile caricare i prodotti.'
   } finally {

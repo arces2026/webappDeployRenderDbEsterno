@@ -27,14 +27,12 @@
   - [🖥️ Passo 6: Preparare il Frontend Vue.js per il Deploy Containerizzato](#️-passo-6-preparare-il-frontend-vuejs-per-il-deploy-containerizzato)
     - [6.1 Struttura del Progetto Vue.js](#61-struttura-del-progetto-vuejs)
     - [6.2 Configurare le Variabili d'Ambiente di Vue.js](#62-configurare-le-variabili-dambiente-di-vuejs)
-    - [6.3 Configurare `vue.config.js`](#63-configurare-vueconfigjs)
+    - [6.3 Configurare `vite.config.js`](#63-configurare-viteconfigjs)
     - [6.4 Utilizzare `fetch` per le Chiamate API](#64-utilizzare-fetch-per-le-chiamate-api)
       - [6.4.1 Creare il modulo API con `fetch`](#641-creare-il-modulo-api-con-fetch)
       - [6.4.2 Esempio di utilizzo in un componente Vue](#642-esempio-di-utilizzo-in-un-componente-vue)
       - [6.4.3 Gestione degli errori centralizzata](#643-gestione-degli-errori-centralizzata)
     - [6.5 Creare il `Dockerfile` per Vue.js](#65-creare-il-dockerfile-per-vuejs)
-    - [6.6 Creare il file `.dockerignore` per Vue.js](#66-creare-il-file-dockerignore-per-vuejs)
-    - [6.7 Caricare il codice su GitHub](#67-caricare-il-codice-su-github)
   - [🚀 Passo 7: Deploy del Frontend Vue.js Containerizzato su Render](#-passo-7-deploy-del-frontend-vuejs-containerizzato-su-render)
     - [7.1 Creare il Web Service per il Frontend](#71-creare-il-web-service-per-il-frontend)
     - [7.2 Configurare il Web Service](#72-configurare-il-web-service)
@@ -689,11 +687,9 @@ git push origin main
 
 Assicurati che il tuo progetto Vue.js abbia una struttura simile a questa:
 
-```
+```text
 frontend/
 ├── public/
-│   ├── index.html
-│   └── _redirects         # Per Vue Router in modalità history
 ├── src/
 │   ├── main.js
 │   ├── App.vue
@@ -704,9 +700,8 @@ frontend/
 │   └── utils/
 │       └── fetch.js       # Funzioni fetch personalizzate
 ├── package.json
-├── vue.config.js
+├── vite.config.js
 ├── Dockerfile             # Per il deploy containerizzato
-├── .dockerignore
 ├── .env.production
 └── nginx.conf             # Configurazione Nginx (opzionale)
 ```
@@ -719,48 +714,41 @@ frontend/
 
 Crea un file `.env.production` nella root del progetto Vue:
 
-```env
-# .env.production
-VUE_APP_API_URL=https://nome-tuo-progetto-backend.onrender.com
-VUE_APP_BASE_URL=https://nome-tuo-progetto-frontend.onrender.com
-```
-
-> ⚠️ **Importante**: Le variabili d'ambiente in Vue iniziano con `VUE_APP_` e vengono incorporate nel bundle al momento della compilazione.
+Non utili in questo caso
 
 [Torna su](#-indice)
 
 ---
 
-### 6.3 Configurare `vue.config.js`
+### 6.3 Configurare `vite.config.js`
 
-Crea o modifica il file `vue.config.js` nella root del progetto Vue:
+configurare invece vite.config per il HMR con watch in dev mode
 
 ```javascript
-// vue.config.js
-module.exports = {
-  // Configura la base URL per il deploy
-  publicPath: '/',
-  
-  // Configura il server di sviluppo per proxy alle API (solo sviluppo)
-  devServer: {
-    proxy: {
-      '/api': {
-        target: process.env.VUE_APP_API_URL || 'http://localhost:8000',
-        changeOrigin: true
-      }
-    }
+import { fileURLToPath, URL } from 'node:url'
+
+import { defineConfig } from 'vite'
+import vue from '@vitejs/plugin-vue'
+import vueDevTools from 'vite-plugin-vue-devtools'
+
+// https://vite.dev/config/
+export default defineConfig({
+  plugins: [vue(), vueDevTools()],
+  resolve: {
+    alias: {
+      '@': fileURLToPath(new URL('./src', import.meta.url)),
+    },
   },
-  
-  // Configurazione per la produzione
-  productionSourceMap: false,
-  
-  // Opzioni per il build
-  configureWebpack: {
-    performance: {
-      hints: false
-    }
-  }
-};
+  // server watch per HMR in dev
+  server: {  
+    host: '0.0.0.0',
+    port: 5173,
+    watch: {   // <---
+      usePolling: true,
+      interval: 300,
+    },
+  },
+})
 ```
 
 [Torna su](#-indice)
@@ -891,46 +879,44 @@ export default {
   </div>
 </template>
 
-<script>
+<script setup>
+import { ref, onMounted } from 'vue';
 import { get, post } from '@/plugins/api';
 
-export default {
-  data() {
-    return {
-      users: [],
-      loading: false,
-      error: null,
-    };
-  },
-  methods: {
-    async fetchUsers() {
-      this.loading = true;
-      this.error = null;
-      try {
-        this.users = await get('/api/users/');
-      } catch (error) {
-        this.error = error.message;
-        console.error('Errore nel caricamento degli utenti:', error);
-      } finally {
-        this.loading = false;
-      }
-    },
-    async addUser() {
-      try {
-        const newUser = await post('/api/users/', {
-          username: 'nuovo_utente',
-          email: 'nuovo@example.com',
-        });
-        this.users.push(newUser);
-      } catch (error) {
-        console.error('Errore nella creazione utente:', error);
-      }
-    }
-  },
-  mounted() {
-    this.fetchUsers();
+const users = ref([]);
+const loading = ref(false);
+const error = ref(null);
+
+const fetchUsers = async () => {
+  loading.value = true;
+  error.value = null;
+  try {
+    const data = await get('/api/users/');
+    // user.value = await get('/api/users/');
+    user.value = data.results // depends on the data fetched
+  } catch (err) {
+    error.value = err.message;
+    console.error('Errore nel caricamento degli utenti:', err);
+  } finally {
+    loading.value = false;
   }
 };
+
+const addUser = async () => {
+  try {
+    const newUser = await post('/api/users/', {
+      username: 'nuovo_utente',
+      email: 'nuovo@example.com',
+    });
+    users.value.push(newUser);
+  } catch (err) {
+    console.error('Errore nella creazione utente:', err);
+  }
+};
+
+onMounted(() => {
+  fetchUsers();
+});
 </script>
 ```
 
@@ -1005,76 +991,76 @@ export const fetchJson = async (url, options = {}) => {
 Crea un file `Dockerfile` nella root del progetto Vue:
 
 ```dockerfile
-# Dockerfile per Vue.js
-# Fase 1: Build dell'applicazione
-FROM node:18-alpine as build
+# ============================================
+# DEVELOPMENT STAGE
+# ============================================
+# Use Node.js 20 slim image as the base for development
+FROM node:20-slim AS development
 
-# Imposta la directory di lavoro
+# Set the working directory inside the container
 WORKDIR /app
 
-# Copia i file package.json e package-lock.json
+# Copy package.json and package-lock.json first (for better layer caching)
 COPY package*.json ./
+# Install all dependencies (including dev dependencies for development)
+RUN npm install
 
-# Installa le dipendenze
-RUN npm ci --only=production
-
-# Copia il codice sorgente
+# Copy the rest of the application source code
 COPY . .
 
-# Build dell'applicazione
+# Expose port 5173 (Vite's default development server port)
+EXPOSE 5173
+
+# Start the Vite development server, binding to all network interfaces
+# This allows access from outside the container (e.g., from host machine)
+CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
+
+
+# ============================================
+# BUILD STAGE (for production)
+# ============================================
+# Use Node.js 20 slim image for building the production bundle
+FROM node:20-slim AS build
+
+# Declare the build arg so Render (or docker compose) can pass it in
+# Vite embeds this value into the bundle at build time
+# This allows the frontend to know the backend API URL at runtime
+ARG VITE_API_URL
+# Set the environment variable from the build argument
+ENV VITE_API_URL=$VITE_API_URL
+
+# Set the working directory inside the container
+WORKDIR /app
+
+# Copy package.json and package-lock.json first (for better layer caching)
+COPY package*.json ./
+# Install all dependencies (including dev dependencies needed for building)
+RUN npm install
+
+# Copy the rest of the application source code
+COPY . .
+# Build the production bundle (creates the 'dist' folder)
 RUN npm run build
 
-# Fase 2: Servire l'applicazione con Nginx
-FROM nginx:alpine
 
-# Copia i file buildati da Nginx
+# ============================================
+# PRODUCTION STAGE (serves built files with Nginx)
+# ============================================
+# Use lightweight Nginx Alpine image for serving static files
+FROM nginx:alpine AS production
+
+# Copy the built static files from the build stage to Nginx's serving directory
 COPY --from=build /app/dist /usr/share/nginx/html
 
-# Copia la configurazione personalizzata di Nginx (opzionale)
-# COPY nginx.conf /etc/nginx/nginx.conf
+# Uncomment if you use Vue Router in history mode (fixes 404 on page refresh):
+# Copy custom Nginx configuration to handle client-side routing
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 
-# Se usi Vue Router in modalità history, copia il file _redirects
-# COPY --from=build /app/public/_redirects /usr/share/nginx/html/_redirects
-
-# Espone la porta 80
+# Expose port 80 (default HTTP port for Nginx)
 EXPOSE 80
 
-# Avvia Nginx
+# Start Nginx in the foreground (required for Docker to keep the container running)
 CMD ["nginx", "-g", "daemon off;"]
-```
-
-**Alternativa con Node.js serve (senza Nginx)**:
-
-```dockerfile
-# Dockerfile per Vue.js (con serve)
-FROM node:18-alpine
-
-# Imposta la directory di lavoro
-WORKDIR /app
-
-# Copia i file package.json e package-lock.json
-COPY package*.json ./
-
-# Installa le dipendenze
-RUN npm ci --only=production
-
-# Installa serve globalmente
-RUN npm install -g serve
-
-# Copia il codice sorgente
-COPY . .
-
-# Build dell'applicazione
-RUN npm run build
-
-# Espone la porta 5000 (default di serve)
-EXPOSE 5000
-
-# Avvia serve
-CMD ["serve", "-s", "dist", "-l", "5000"]
-```
-
-> ⚠️ **Nota**: L'immagine Nginx è più leggera e performante per servire file statici.
 
 [Torna su](#-indice)
 
@@ -1191,30 +1177,36 @@ Nella sezione **"Environment Variables"** di Render, aggiungi:
 3. Aggiungi:
    - `VUE_APP_API_URL` = `https://nome-tuo-progetto-backend.onrender.com`
 
-Oppure, modifica il Dockerfile per accettare Build Arguments:
+Oppure, modifica il Dockerfile (come fatto per questo progetto) per accettare Build Arguments:  (come in questo caso)
 
 ```dockerfile
-# Dockerfile per Vue.js con Build Arguments
-FROM node:18-alpine as build
+...
+# ============================================
+# BUILD STAGE (for production)
+# ============================================
+# Use Node.js 20 slim image for building the production bundle
+FROM node:20-slim AS build
 
-# Build arguments
-ARG VUE_APP_API_URL
-ARG VUE_APP_BASE_URL
+# Declare the build arg so Render (or docker compose) can pass it in
+# Vite embeds this value into the bundle at build time
+# This allows the frontend to know the backend API URL at runtime
+ARG VITE_API_URL
+# Set the environment variable from the build argument
+ENV VITE_API_URL=$VITE_API_URL
 
-# Imposta le variabili d'ambiente per il build
-ENV VUE_APP_API_URL=$VUE_APP_API_URL
-ENV VUE_APP_BASE_URL=$VUE_APP_BASE_URL
-
+# Set the working directory inside the container
 WORKDIR /app
-COPY package*.json ./
-RUN npm ci --only=production
-COPY . .
-RUN npm run build
 
-FROM nginx:alpine
-COPY --from=build /app/dist /usr/share/nginx/html
-EXPOSE 80
-CMD ["nginx", "-g", "daemon off;"]
+# Copy package.json and package-lock.json first (for better layer caching)
+COPY package*.json ./
+# Install all dependencies (including dev dependencies needed for building)
+RUN npm install
+
+# Copy the rest of the application source code
+COPY . .
+# Build the production bundle (creates the 'dist' folder)
+RUN npm run build
+...
 ```
 
 **Alternativa (sconsigliata per produzione)**: Usa un file `.env.production` con valori hardcoded.

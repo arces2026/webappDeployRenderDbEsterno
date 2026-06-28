@@ -1,49 +1,70 @@
 # ============================================
 # DEVELOPMENT STAGE
 # ============================================
+# Use Node.js 20 slim image as the base for development
 FROM node:20-slim AS development
 
+# Set the working directory inside the container
 WORKDIR /app
 
+# Copy package.json and package-lock.json first (for better layer caching)
 COPY package*.json ./
+# Install all dependencies (including dev dependencies for development)
 RUN npm install
 
+# Copy the rest of the application source code
 COPY . .
 
+# Expose port 5173 (Vite's default development server port)
 EXPOSE 5173
 
+# Start the Vite development server, binding to all network interfaces
+# This allows access from outside the container (e.g., from host machine)
 CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
 
 
 # ============================================
 # BUILD STAGE (for production)
 # ============================================
+# Use Node.js 20 slim image for building the production bundle
 FROM node:20-slim AS build
 
 # Declare the build arg so Render (or docker compose) can pass it in
 # Vite embeds this value into the bundle at build time
+# This allows the frontend to know the backend API URL at runtime
 ARG VITE_API_URL
+# Set the environment variable from the build argument
 ENV VITE_API_URL=$VITE_API_URL
 
+# Set the working directory inside the container
 WORKDIR /app
 
+# Copy package.json and package-lock.json first (for better layer caching)
 COPY package*.json ./
+# Install all dependencies (including dev dependencies needed for building)
 RUN npm install
 
+# Copy the rest of the application source code
 COPY . .
+# Build the production bundle (creates the 'dist' folder)
 RUN npm run build
 
 
 # ============================================
 # PRODUCTION STAGE (serves built files with Nginx)
 # ============================================
+# Use lightweight Nginx Alpine image for serving static files
 FROM nginx:alpine AS production
 
+# Copy the built static files from the build stage to Nginx's serving directory
 COPY --from=build /app/dist /usr/share/nginx/html
 
 # Uncomment if you use Vue Router in history mode (fixes 404 on page refresh):
+# Copy custom Nginx configuration to handle client-side routing
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
+# Expose port 80 (default HTTP port for Nginx)
 EXPOSE 80
 
+# Start Nginx in the foreground (required for Docker to keep the container running)
 CMD ["nginx", "-g", "daemon off;"]

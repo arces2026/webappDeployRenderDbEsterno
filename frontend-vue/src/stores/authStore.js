@@ -1,23 +1,48 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+import { post } from '@/plugins/api'
 import { jwtDecode } from 'jwt-decode'
 
 export const useAuthStore = defineStore('auth', () => {
-  const token = ref(localStorage.getItem('token') || null)
+  const token = ref(localStorage.getItem('access_token') || null)
   const refreshToken = ref(localStorage.getItem('refreshToken') || null)
   const user = ref(null)
-  const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
   const isAuthenticated = computed(() => !!token.value)
 
+  // Helper function to extract user from token
+  function getUserFromToken(tokenValue) {
+    try {
+      const decoded = jwtDecode(tokenValue)
+      // Log the full decoded token to see what's available
+      console.log('Decoded JWT:', decoded)
+      // Your token structure:
+      // { token_type: 'access', exp: 1782580601, iat: 1782577001, jti: '...', user_id: '1' }
+
+      return {
+        id: decoded.user_id,
+        // Since username and email aren't in the token,
+        // you'll need to fetch them separately or get them from the login response
+      }
+    } catch (error) {
+      console.error('Error decoding token:', error)
+      return null
+    }
+  }
+
   function setAuth(data) {
+    // Fix: Use consistent key names
     token.value = data.access
-    refreshToken.value = data.refreshToken
-    user.value = data.user || null
+    refreshToken.value = data.refreshToken // Make sure this matches your API response
+    // user.value = data.user || null
+
+    // Decode token to get user info
+    user.value = getUserFromToken(data.access)
+
     localStorage.setItem('access_token', data.access)
     localStorage.setItem('refresh_token', data.refresh)
-    if (data.user) {
-      localStorage.setItem('user', JSON.stringify(data.user))
+    if (user.value) {
+      localStorage.setItem('user', JSON.stringify(user.value))
     }
   }
 
@@ -36,20 +61,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   async function login(username, password) {
     try {
-      // const response = await fetch('http://localhost:8000/api/v1/login/', {
-      const response = await fetch(`${API_BASE_URL}/api/v1/login/`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ username, password }),
-      })
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.detail || 'Login failed')
-      }
-
-      const data = await response.json()
+      const data = await post('/api/v1/login/', { username, password })
       setAuth(data)
       return { success: true, data }
     } catch (error) {
@@ -59,22 +71,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   async function register(userData) {
     try {
-      // const response = await fetch('http://localhost:8000/api/v1/register/', {
-      const response = await fetch(`${API_BASE_URL}/api/v1/register/`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(userData),
-      })
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        // format error message for display
-        const errorMessages = Object.values(data).flat().join(' ')
-        throw new Error(errorMessages || 'Registration failed')
-      }
+      const data = await post('/api/v1/register/', userData)
       return { success: true, data }
     } catch (error) {
       return { success: false, error: error.message }
@@ -83,6 +80,11 @@ export const useAuthStore = defineStore('auth', () => {
 
   async function logout() {
     clearAuth()
+  }
+
+  // Initialize user from localStorage if token exists
+  if (token.value) {
+    user.value = getUserFromToken(token.value)
   }
 
   return {
