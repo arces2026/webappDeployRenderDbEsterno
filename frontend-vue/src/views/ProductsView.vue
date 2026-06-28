@@ -2,6 +2,7 @@
 import Grid from '@/components/Grid.vue'
 import ProductList from '@/components/ProductList.vue'
 import { onMounted, ref } from 'vue'
+import { get } from '@/plugins/api'
 
 const libri = ref([])
 const autori = ref([])
@@ -13,37 +14,43 @@ const searchQuery = ref('')
 const selectedField = ref('all')
 console.log({ selectedField: selectedField.value })
 onMounted(() => {
-  fetch('http://localhost:8000/api/v1/libri/')
-    .then((response) => {
-      // Controllo manuale dello stato HTTP
-      if (!response.ok) {
-        throw new Error(`Errore HTTP: ${response.status}`)
-      }
+  // fetch('http://localhost:8000/api/v1/libri/')
+  //   .then((response) => {
+  //     // Controllo manuale dello stato HTTP
+  //     if (!response.ok) {
+  //       throw new Error(`Errore HTTP: ${response.status}`)
+  //     }
+     const data = get ('/api/v1/libri/')
       // Converte la risposta in JSON (ritorna una nuova Promise)
-      return response.json()
-    })
-    .then((data) => {
-      // Aggiorna lo stato reattivo con i dati ricevuti
-      console.log({ dataResults: data.results })
-      console.log({ libriKeys: Object.keys(data.results[0]) })
-      libri.value = data.results
-    })
+      // return response.json()
+      console.log('hello world')
+      console.log({libri: data})
+    // })
+    // .then((data) => {
+    //   // Aggiorna lo stato reattivo con i dati ricevuti
+    //   console.log({ dataResults: data.results })
+    //   console.log({ libriKeys: Object.keys(data.results[0]) })
+    //   libri.value = data.results
+    // })
 
   console.log(libri.value)
 
-  fetch('http://localhost:8000/api/v1/autori')
-    .then((response) => {
-      // Controllo manuale dello stato HTTP
-      if (!response.ok) {
-        throw new Error(`Errore HTTP: ${response.status}`)
-      }
-      // Converte la risposta in JSON (ritorna una nuova Promise)
-      return response.json()
-    })
-    .then((data) => {
-      // Aggiorna lo stato reattivo con i dati ricevuti
-      autori.value = data.results
-    })
+  // fetch('http://localhost:8000/api/v1/autori')
+  //   .then((response) => {
+  //     // Controllo manuale dello stato HTTP
+  //     if (!response.ok) {
+  //       throw new Error(`Errore HTTP: ${response.status}`)
+  //     }
+  //     // Converte la risposta in JSON (ritorna una nuova Promise)
+  //     return response.json()
+  //   })
+  //   .then((data) => {
+  //     // Aggiorna lo stato reattivo con i dati ricevuti
+  //     autori.value = data.results
+  //   })
+
+  const autori = get('/api/v1/autori/')
+  console.log({autori: autori})
 
   // console.log(autori.value);
 })

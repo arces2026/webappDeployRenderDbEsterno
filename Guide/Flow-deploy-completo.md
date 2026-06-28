@@ -99,6 +99,7 @@
 > ⚠️ **Importante**: Copia la **Pooled Connection String** perché verrà usata nel passo successivo.
 
 **Vantaggi Neon**:
+
 - Database serverless con autoscaling
 - Branching e point-in-time recovery
 - Ottimo per sviluppo e produzione leggera
@@ -125,6 +126,7 @@
 > ⚠️ **Importante**: Usa la stringa con il **connection pooler** (porta 6543 per Supabase).
 
 **Vantaggi Supabase**:
+
 - Piattaforma completa (autenticazione, storage, API REST)
 - Interfaccia utente intuitiva
 - Ottimo per progetti che cresceranno
@@ -154,7 +156,8 @@ Aiven offre un piano gratuito permanente per MariaDB, perfetto per chi preferisc
      - **Username**: `avnadmin`
      - **Password**: (la password generata automaticamente)
    - Stringa di connessione completa:
-     ```
+  
+     ```bash
      mysql://avnadmin:password@host:port/defaultdb
      ```
 
