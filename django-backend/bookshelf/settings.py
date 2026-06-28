@@ -26,7 +26,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.getenv("SECRET_KEY", "fallback-local-only-key")
-DEBUG = os.getenv("DEBUG", "False") == "True"
+DEBUG = os.getenv("DEBUG", "False") == "True" # True if in .env is True
 # SECURITY WARNING: don't run with debug turned on in production!
 
 
@@ -84,12 +84,9 @@ MIDDLEWARE = [
 ]
 
 # Allow all origins (for development only)
-CORS_ALLOW_ALL_ORIGINS = True
-
-CORS_ALLOW_ORIGINS = [
-    'http://localhost:5173', # Vue dev server
-    'http://127.0.0.1:5173'
-]
+# CORS_ALLOW_ALL_ORIGINS = True
+# Read from .env — works for both local and production
+CORS_ALLOWED_ORIGINS = os.getenv("CORS_ALLOWED_ORIGINS", "").split(",")
 
 ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
 
