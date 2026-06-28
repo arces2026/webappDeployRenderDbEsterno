@@ -13,18 +13,19 @@ const gridAutoriColumns = ['nome', 'nazione']
 const searchQuery = ref('')
 const selectedField = ref('all')
 console.log({ selectedField: selectedField.value })
-onMounted(() => {
+onMounted(async () => {
   // fetch('http://localhost:8000/api/v1/libri/')
   //   .then((response) => {
   //     // Controllo manuale dello stato HTTP
   //     if (!response.ok) {
   //       throw new Error(`Errore HTTP: ${response.status}`)
   //     }
-     const data = get ('/api/v1/libri/')
+     const data = await get ('/api/v1/libri/')
       // Converte la risposta in JSON (ritorna una nuova Promise)
       // return response.json()
       console.log('hello world')
       console.log({libri: data})
+      libri.value = data.results
     // })
     // .then((data) => {
     //   // Aggiorna lo stato reattivo con i dati ricevuti
@@ -49,9 +50,9 @@ onMounted(() => {
   //     autori.value = data.results
   //   })
 
-  const autori = get('/api/v1/autori/')
+  const autori = await get('/api/v1/autori/')
   console.log({autori: autori})
-
+  autori.value = autori.results
   // console.log(autori.value);
 })
 </script>
