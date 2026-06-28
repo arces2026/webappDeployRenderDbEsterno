@@ -69,16 +69,20 @@ onMounted(async () => {
       <template #image>
         <div class="badge-wrapper">
           <span class="badge">sconto {{ product.sconto }} %</span>
-          <img :src="product.immagine_url" :alt="product.nome" />
+          <router-link :to="`/detail/${product.id}`">
+            <img :src="product.immagine_url" :alt="product.nome" />
+          </router-link>
         </div>
       </template>
 
       <template #content>
-        <span class="category">{{ product.categoria }}</span>
-        <h3 class="custom-title">{{ product.nome }}</h3>
-        <p class="custom-desc">
-          {{ product.descrizione }}
-        </p>
+        <router-link to="/detail" id="r-link-content">
+          <span class="category">{{ product.categoria }}</span>
+          <h3 class="custom-title">{{ product.nome }}</h3>
+          <p class="custom-desc">
+            {{ product.descrizione }}
+          </p>
+        </router-link>
       </template>
 
       <template #footer>
@@ -109,7 +113,10 @@ onMounted(async () => {
   font-size: 0.8em;
   padding: 4px;
 }
-
+#r-link-content {
+  text-decoration: none;
+  color: inherit;
+}
 .add-btn {
   padding: 10px;
 }

@@ -1,3 +1,4 @@
+import DetailView from '@/views/DetailView.vue'
 import HomeView from '@/views/HomeView.vue'
 import LoginView from '@/views/LoginView.vue'
 import ProductsView from '@/views/ProductsView.vue'
@@ -13,6 +14,11 @@ const router = createRouter({
       path: '/',                // L'URL del browser
       name: 'home',             // Un nome univoco per la rotta (opzionale ma consigliato)
       component: HomeView       // Il componente associato
+    },
+    {
+      path: '/detail/:id',                // L'URL del browser
+      name: 'detail',             // Un nome univoco per la rotta (opzionale ma consigliato)
+      component: DetailView       // Il componente associato
     },
     {
       path: '/products',            // L'URL del browser
