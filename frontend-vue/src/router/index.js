@@ -5,85 +5,82 @@ import ProductsView from '@/views/ProductsView.vue'
 import RegisterView from '@/views/RegisterView.vue'
 import UsersView from '@/views/UsersView.vue'
 import { createRouter, createWebHistory } from 'vue-router'
-// import { jwtDecode } from 'jwt-decode';
+import { useAuthStore } from '@/stores/authStore'
+import { jwtDecode } from 'jwt-decode'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
     {
-      path: '/',                // L'URL del browser
-      name: 'home',             // Un nome univoco per la rotta (opzionale ma consigliato)
-      component: HomeView       // Il componente associato
+      path: '/', // L'URL del browser
+      name: 'home', // Un nome univoco per la rotta (opzionale ma consigliato)
+      component: HomeView,
+      meta: { requiresAuth: true }, // Il componente associato
     },
     {
-      path: '/detail/:id',                // L'URL del browser
-      name: 'detail',             // Un nome univoco per la rotta (opzionale ma consigliato)
-      component: DetailView       // Il componente associato
+      path: '/detail/:id', // L'URL del browser
+      name: 'detail', // Un nome univoco per la rotta (opzionale ma consigliato)
+      component: DetailView, // Il componente associato
     },
     {
-      path: '/products',            // L'URL del browser
-      name: 'products',             // Un nome univoco per la rotta (opzionale ma consigliato)
-      component: ProductsView       // Il componente associato
+      path: '/products', // L'URL del browser
+      name: 'products', // Un nome univoco per la rotta (opzionale ma consigliato)
+      component: ProductsView, // Il componente associato
     },
     {
-      path:'/users',
-      name:'users',
+      path: '/users',
+      name: 'users',
       component: UsersView,
-      meta: { richiedeAuth: true }
+      meta: { requiresAuth: true },
     },
     {
-      path:'/login',
-      name:'login',
-      component: LoginView
+      path: '/login',
+      name: 'login',
+      component: LoginView,
     },
     {
-      path:'/register',
-      name:'register',
-      component: RegisterView
-    }
+      path: '/register',
+      name: 'register',
+      component: RegisterView,
+    },
   ],
 })
 
 // --- IL CONTROLLO ACCESSI (Navigation Guard) ---
 router.beforeEach((to, from) => {
-  const token = localStorage.getItem('token');
+  const authStore = useAuthStore()
 
-  // Caso 1: La rotta richiede l'autenticazione?
-  if (to.meta.richiedeAuth) {
-    
-    // Se il token non esiste, rimanda al login
-    if (!token) {
-      return '/login';
+  if (to.meta.requiresAuth) {
+    // First check if there's a token
+    if (!authStore.isAuthenticated) {
+      return '/login'
     }
 
+    // Optional: Validate token expiration
+    const token = localStorage.getItem('access_token')
+    // const token = localStorage.getItem('access_token')
     try {
-      // Decodifichiamo il token per leggere la scadenza e il ruolo
-      //const decoded = jwtDecode(token);
-
-      // // SOTTO-CONTROLLO opzionale: Il token è scaduto? (exp è in secondi, Date.now() in millisecondi)
-      // if (decoded.exp && decoded.exp * 1000 < Date.now()) {
-      //   localStorage.removeItem('token'); // Cancella il token scaduto
-      //   return next('/login');
-      // }
-
-      // // Caso 2: La rotta richiede un ruolo specifico?
-      // if (to.meta.ruoliConsentiti) {
-      //   // Se il ruolo dell'utente non è tra quelli consentiti, blocca l'accesso
-      //   if (!to.meta.ruoliConsentiti.includes(decoded.role)) {
-      //     alert("Non hai i permessi per accedere a questa pagina!");
-      //     return next('/dashboard'); // Rimanda a una pagina sicura
-      //   }
-      // }
-
+      const decoded = jwtDecode(token)
+      if (decoded.exp && decoded.exp * 1000 < Date.now()) {
+        // Token expired
+        authStore.logout()
+        return '/login'
+      }
     } catch (error) {
-      // Se il token è corrotto o non decodificabile, pulisci e rimanda al login
-      localStorage.removeItem('token');
-      return '/login';
+      // Invalid token
+      authStore.logout()
+      return '/login'
     }
   }
 
-  // Se i controlli passano (o la rotta è pubblica), procedi normalmente
-  return;
-});
+  // Redirect authenticated users from auth pages
+  if (to.path === '/login' || to.path === '/register') {
+    if (authStore.isAuthenticated) {
+      return '/'
+    }
+  }
+
+  return true
+})
 
 export default router

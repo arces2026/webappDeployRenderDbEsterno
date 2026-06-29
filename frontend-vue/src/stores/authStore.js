@@ -5,7 +5,7 @@ import { jwtDecode } from 'jwt-decode'
 
 export const useAuthStore = defineStore('auth', () => {
   const token = ref(localStorage.getItem('access_token') || null)
-  const refreshToken = ref(localStorage.getItem('refreshToken') || null)
+  const refreshToken = ref(localStorage.getItem('refresh_token') || null)
   const user = ref(null)
 
   const isAuthenticated = computed(() => !!token.value)
@@ -33,7 +33,7 @@ export const useAuthStore = defineStore('auth', () => {
   function setAuth(data) {
     // Fix: Use consistent key names
     token.value = data.access
-    refreshToken.value = data.refreshToken // Make sure this matches your API response
+    refreshToken.value = data.refresh // Make sure this matches your API response
     // user.value = data.user || null
 
     // Decode token to get user info
@@ -62,6 +62,12 @@ export const useAuthStore = defineStore('auth', () => {
   async function login(username, password) {
     try {
       const data = await post('/api/v1/login/', { username, password })
+       console.log('🔍 Login API response structure:', data)
+       console.log('Keys:', Object.keys(data))
+       console.log('access_token?', data.access_token)
+       console.log('access?', data.access)
+       console.log('refresh_token?', data.refresh_token)
+       console.log('refresh?', data.refresh)
       setAuth(data)
       return { success: true, data }
     } catch (error) {

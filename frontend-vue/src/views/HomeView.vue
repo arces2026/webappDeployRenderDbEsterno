@@ -82,7 +82,7 @@ onMounted(async () => {
       </template>
 
       <template #content>
-        <router-link to="/detail" id="r-link-content">
+        <router-link :to="`/detail/${product.id}`" id="r-link-content">
           <span class="category">{{ product.categoria }}</span>
           <h3 class="custom-title">{{ product.nome }}</h3>
           <p class="custom-desc">
