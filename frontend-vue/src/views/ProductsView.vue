@@ -3,9 +3,11 @@ import Grid from '@/components/Grid.vue'
 import ProductList from '@/components/ProductList.vue'
 import { onMounted, ref } from 'vue'
 import { get } from '@/plugins/api'
+import LoadingSpinner from '@/components/LoadingSpinner.vue'
 
 const libri = ref([])
 const autori = ref([])
+const loading = ref(false)
 
 const gridLibriColumns = ['titolo', 'anno', 'genere', 'autore.nome']
 const radioSelection = ['titolo', 'anno', 'genere', 'autore.nome', 'all']
@@ -14,50 +16,25 @@ const searchQuery = ref('')
 const selectedField = ref('all')
 console.log({ selectedField: selectedField.value })
 onMounted(async () => {
-  // fetch('http://localhost:8000/api/v1/libri/')
-  //   .then((response) => {
-  //     // Controllo manuale dello stato HTTP
-  //     if (!response.ok) {
-  //       throw new Error(`Errore HTTP: ${response.status}`)
-  //     }
-     const data = await get ('/api/v1/libri/')
-      // Converte la risposta in JSON (ritorna una nuova Promise)
-      // return response.json()
-      console.log('hello world')
-      console.log({libri: data})
-      libri.value = data.results
-    // })
-    // .then((data) => {
-    //   // Aggiorna lo stato reattivo con i dati ricevuti
-    //   console.log({ dataResults: data.results })
-    //   console.log({ libriKeys: Object.keys(data.results[0]) })
-    //   libri.value = data.results
-    // })
+  loading.value = true
+  const data = await get('/api/v1/libri/')
 
+  console.log({ libri: data })
+
+  loading.value = false
+  libri.value = data.results
+ 
   console.log(libri.value)
 
-  // fetch('http://localhost:8000/api/v1/autori')
-  //   .then((response) => {
-  //     // Controllo manuale dello stato HTTP
-  //     if (!response.ok) {
-  //       throw new Error(`Errore HTTP: ${response.status}`)
-  //     }
-  //     // Converte la risposta in JSON (ritorna una nuova Promise)
-  //     return response.json()
-  //   })
-  //   .then((data) => {
-  //     // Aggiorna lo stato reattivo con i dati ricevuti
-  //     autori.value = data.results
-  //   })
-
   const autori = await get('/api/v1/autori/')
-  console.log({autori: autori})
+  console.log({ autori: autori })
   autori.value = autori.results
   // console.log(autori.value);
 })
 </script>
 
 <template>
+  
   <main class="main">
     <form id="search">
       Cerca <input id="search-input" name="query" v-model="searchQuery" />
@@ -68,7 +45,9 @@ onMounted(async () => {
     </form>
 
     <ProductList></ProductList>
+    <LoadingSpinner v-if="loading"/>
     <Grid
+    
       style="width: 45%"
       :data="libri"
       :columns="gridLibriColumns"

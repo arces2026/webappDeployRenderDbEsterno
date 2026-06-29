@@ -4,6 +4,8 @@ import ProductCard from '@/components/ProductCard.vue'
 // import getProducts from '@/services/productService'
 import { useCartStore } from '@/stores/cartStore'
 import { get } from '@/plugins/api'
+import LoadingSpinner from '@/components/LoadingSpinner.vue'
+
 
 const cartStore = useCartStore()
 
@@ -43,15 +45,17 @@ console.log({ cart: cartStore.totalItems })
 
 const products = ref([])
 const error = ref(null)
-const loading = ref(true)
+const loading = ref(false)
 
 onMounted(async () => {
   try {
     // products.value = await getProducts()
+    loading.value = true
     const token = localStorage.getItem('access_token')
     const data = await get('/api/v1/scarpe', {
       Authorization: `Bearer ${token}`,
     })
+    loading.value = false
     console.log({ dataresults: data.results })
     products.value = data.results
   } catch (err) {
@@ -64,7 +68,9 @@ onMounted(async () => {
 </script>
 
 <template>
+  <LoadingSpinner v-if="loading"/>
   <main class="grid">
+    
     <ProductCard v-for="product in products" :key="product.id">
       <template #image>
         <div class="badge-wrapper">
@@ -119,6 +125,7 @@ onMounted(async () => {
 }
 .add-btn {
   padding: 10px;
+  cursor: pointer;
 }
 
 .old-price {
