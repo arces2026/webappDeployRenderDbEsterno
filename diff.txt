@@ -1,2299 +1,270 @@
-diff --git a/ELIMINARE-docker-compose.yml b/ELIMINARE-docker-compose.yml
-deleted file mode 100644
-index d333ae2..0000000
---- a/ELIMINARE-docker-compose.yml
-+++ /dev/null
-@@ -1,109 +0,0 @@
--# Docker Compose file per gestire un'applicazione full-stack con:
--# - MariaDB (database)
--# - Django (backend)
--# - Vue.js (frontend)
--
--# Definizione dei servizi (container) che compongono l'applicazione
--services:
--  
--  # ============================================
--  # SERVIZIO 2: Backend Django
--  # ============================================
--  backend:
--    # Build dell'immagine usando il Dockerfile nella cartella specificata
--    build:
--      context: ./django-backend
--      dockerfile: Dockerfile.dev
--
--    # Nome personalizzato per il container Django
--    container_name: django-backend
--
--    # Comando eseguito all'avvio del container:
--    # 1. wait-for-it.sh: attende che il database sia pronto (massimo 30 secondi)
--    # 2. Poi avvia il server di sviluppo Django sulla porta 8000
--    command: >
--        sh -c "python manage.py migrate && python manage.py runserver 0.0.0.0:8000"
--
--    # Politica di restart: ricarica automaticamente a meno che non venga fermato manualmente
--    restart: unless-stopped
--
--    # File delle variabili d'ambiente (condiviso con db)
--    env_file:
--      - .env
--
--    # Volumi: monta il codice sorgente nel container
--    # Così le modifiche locali si riflettono immediatamente (hot-reload)
--    volumes:
--      - ./django-backend:/app
--
--    # Mappatura delle porte:
--    # - Porta host (8000) → Porta container (8000)
--    ports:
--      - "8000:8000"
--
--  # # ============================================
--  # # SERVIZIO 3: Frontend Vue.js
--  # # ============================================
--  # frontend:
--  #   # Build dell'immagine usando il Dockerfile nella cartella specificata
--  #   build:
--  #     context: ./frontend-vue
--
--  #   # Nome personalizzato per il container Vue
--  #   container_name: frontend-vue
--
--  #   # Mappatura delle porte:
--  #   # - Porta host (8080) → Porta container (80)
--  #   # Il container espone la porta 80 perché usa Nginx per servire i file statici
--  #   ports:
--  #     - "8080:80"
--
--  #   # Monta il file nginx.conf per configurare Nginx (SOPPRIME la configurazione predefinita)
--  #   volumes:
--  #     - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro # :ro = read-only per sicurezz
--
--  #   # Dipendenze: questo servizio parte DOPO backend
--  #   # Nota: non usa condition: service_healthy perché Django non ha un healthcheck
--  #   depends_on:
--  #     - backend
--
--  # ============================================
--  # SERVIZIO 3: Frontend Vue - DEVELOPMENT MODE
--  # ============================================
--  # frontend-dev:
--  #   build:
--  #     context: ./frontend-vue
--  #     target: development
--  #   container_name: frontend-vue-dev
--  #   ports:
--  #     - "8080:5173"
--  #   volumes:
--  #     - ./frontend-vue:/app
--  #     - /app/node_modules
--  #   environment:
--  #     - NODE_ENV=development
--  #     - CHOKIDAR_USEPOLLING=true
--  #   depends_on:
--  #     - backend
--
--  # ============================================
--  # SERVIZIO 4: Frontend Vue - PRODUCTION MODE
--  # ============================================
--  frontend-prod:
--    build:
--      context: ./frontend-vue
--      target: production
--    container_name: frontend-vue-prod
--    ports:
--      - "8080:80"
--    depends_on:
--      - backend
--
--# ============================================
--# VOLUMI PERSISTENTI
--# ============================================
--# volumes:
--  # Volume per i dati di MariaDB
--  # Questo garantisce che i dati del database sopravvivano alla rimozione del container
--  # mariadb_data:
--    # driver: local (default) - opzionale, specifica il driver di storage
-diff --git a/Flow-deploy-completo.md b/Flow-deploy-completo.md
-deleted file mode 100644
-index 0e756de..0000000
---- a/Flow-deploy-completo.md
-+++ /dev/null
-@@ -1,1542 +0,0 @@
--# Guida al Deploy di Django Backend + Vue.js Frontend su Render con Database Esterno
--
--## 📑 Indice
--
--- [Guida al Deploy di Django Backend + Vue.js Frontend su Render con Database Esterno](#guida-al-deploy-di-django-backend--vuejs-frontend-su-render-con-database-esterno)
--  - [📑 Indice](#-indice)
--  - [📋 Prerequisiti](#-prerequisiti)
--  - [🗄️ Passo 1: Creare il Database](#️-passo-1-creare-il-database)
--    - [Opzione A: Neon (PostgreSQL)](#opzione-a-neon-postgresql)
--    - [Opzione B: Supabase (PostgreSQL)](#opzione-b-supabase-postgresql)
--    - [Opzione C: MariaDB (con Aiven)](#opzione-c-mariadb-con-aiven)
--  - [🐍 Passo 2: Preparare il Progetto Django per il Deploy](#-passo-2-preparare-il-progetto-django-per-il-deploy)
--    - [2.1 Installare le dipendenze necessarie](#21-installare-le-dipendenze-necessarie)
--    - [2.2 Configurare `settings.py` per PostgreSQL](#22-configurare-settingspy-per-postgresql)
--    - [2.3 Configurare `settings.py` per MariaDB](#23-configurare-settingspy-per-mariadb)
--    - [2.4 Creare il `Dockerfile` per Django](#24-creare-il-dockerfile-per-django)
--    - [2.5 Creare il file `.dockerignore`](#25-creare-il-file-dockerignore)
--    - [2.6 Caricare il codice su GitHub](#26-caricare-il-codice-su-github)
--  - [🚀 Passo 3: Deploy del Backend Django su Render](#-passo-3-deploy-del-backend-django-su-render)
--    - [3.1 Creare il Web Service](#31-creare-il-web-service)
--    - [3.2 Configurare il Web Service](#32-configurare-il-web-service)
--    - [3.3 Configurare il Docker Command](#33-configurare-il-docker-command)
--    - [3.4 Configurare le Variabili d'Ambiente](#34-configurare-le-variabili-dambiente)
--    - [3.5 Avviare il Deploy](#35-avviare-il-deploy)
--  - [✅ Passo 4: Verificare il Deploy del Backend](#-passo-4-verificare-il-deploy-del-backend)
--  - [🔄 Passo 5: Aggiornare il Backend](#-passo-5-aggiornare-il-backend)
--  - [🖥️ Passo 6: Preparare il Frontend Vue.js per il Deploy Containerizzato](#️-passo-6-preparare-il-frontend-vuejs-per-il-deploy-containerizzato)
--    - [6.1 Struttura del Progetto Vue.js](#61-struttura-del-progetto-vuejs)
--    - [6.2 Configurare le Variabili d'Ambiente di Vue.js](#62-configurare-le-variabili-dambiente-di-vuejs)
--    - [6.3 Configurare `vite.config.js`](#63-configurare-viteconfigjs)
--    - [6.4 Utilizzare `fetch` per le Chiamate API](#64-utilizzare-fetch-per-le-chiamate-api)
--      - [6.4.1 Creare il modulo API con `fetch`](#641-creare-il-modulo-api-con-fetch)
--      - [6.4.2 Esempio di utilizzo in un componente Vue](#642-esempio-di-utilizzo-in-un-componente-vue)
--      - [6.4.3 Gestione degli errori centralizzata](#643-gestione-degli-errori-centralizzata)
--    - [6.5 Creare il `Dockerfile` per Vue.js](#65-creare-il-dockerfile-per-vuejs)
--  - [🚀 Passo 7: Deploy del Frontend Vue.js Containerizzato su Render](#-passo-7-deploy-del-frontend-vuejs-containerizzato-su-render)
--    - [7.1 Creare il Web Service per il Frontend](#71-creare-il-web-service-per-il-frontend)
--    - [7.2 Configurare il Web Service](#72-configurare-il-web-service)
--    - [7.3 Configurare il Docker Command](#73-configurare-il-docker-command)
--    - [7.4 Configurare le Variabili d'Ambiente](#74-configurare-le-variabili-dambiente)
--    - [7.5 Avviare il Deploy](#75-avviare-il-deploy)
--  - [🌐 Configurazione CORS per il Collegamento Frontend-Backend](#-configurazione-cors-per-il-collegamento-frontend-backend)
--    - [1. Configurare CORS su Django](#1-configurare-cors-su-django)
--    - [2. Verificare che le richieste arrivino al backend corretto](#2-verificare-che-le-richieste-arrivino-al-backend-corretto)
--    - [3. Testare la connessione](#3-testare-la-connessione)
--  - [📦 Strategie di Organizzazione del Repository](#-strategie-di-organizzazione-del-repository)
--    - [Strategia 1: Repository Singolo (Monorepo)](#strategia-1-repository-singolo-monorepo)
--    - [Strategia 2: Repository Separati](#strategia-2-repository-separati)
--  - [⚠️ Note Importanti](#️-note-importanti)
--    - [Cold Start su Render](#cold-start-su-render)
--    - [Backup del Database](#backup-del-database)
--    - [Consigli per la Produzione](#consigli-per-la-produzione)
--    - [Differenze tra PostgreSQL e MariaDB](#differenze-tra-postgresql-e-mariadb)
--  - [🐛 Troubleshooting Comuni](#-troubleshooting-comuni)
--    - [Backend](#backend)
--      - [Errore: "Database not found"](#errore-database-not-found)
--      - [Errore: "Superuser already exists"](#errore-superuser-already-exists)
--      - [Errore: "ModuleNotFoundError: No module named 'your\_project'"](#errore-modulenotfounderror-no-module-named-your_project)
--      - [Errore: "psycopg2.OperationalError: could not connect to server"](#errore-psycopg2operationalerror-could-not-connect-to-server)
--      - [Errore: "mysqlclient not found"](#errore-mysqlclient-not-found)
--      - [Errore: "Access denied for user"](#errore-access-denied-for-user)
--    - [Frontend](#frontend)
--      - [Errore: "API calls fail with CORS error"](#errore-api-calls-fail-with-cors-error)
--      - [Errore: "404 Not Found on page refresh"](#errore-404-not-found-on-page-refresh)
--      - [Errore: "VUE\_APP\_API\_URL not defined"](#errore-vue_app_api_url-not-defined)
--      - [Errore: "Container fails to start"](#errore-container-fails-to-start)
--  - [📊 Costo: Tutto Gratuito](#-costo-tutto-gratuito)
--  - [🎯 Riepilogo](#-riepilogo)
--  - [📚 Risorse Utili](#-risorse-utili)
--
-----
--
--## 📋 Prerequisiti
--
--- Account su [GitHub](https://github.com)
--- Account su [Render](https://render.com)
--- Account su [Neon](https://neon.tech) **oppure** [Supabase](https://supabase.com) **oppure** [Aiven](https://aiven.io)
--- Codice sorgente del progetto Django (già in un repository GitHub)
--- Codice sorgente del progetto Vue.js (da deployare)
--
--[Torna su](#-indice)
--
-----
--
--## 🗄️ Passo 1: Creare il Database
--
--### Opzione A: Neon (PostgreSQL)
--
--1. Vai su [Neon](https://neon.tech) e crea un account (gratuito)
--2. Crea un nuovo progetto:
--   - Clicca su **"New Project"**
--   - Dai un nome al progetto (es. `my-django-app`)
--   - Scegli la regione più vicina a te (o a dove deployerai su Render)
--   - Clicca su **"Create Project"**
--3. Nella dashboard del progetto, troverai le credenziali di connessione:
--   - **Connection String**: `postgresql://user:password@host/dbname`
--   - **Pooled Connection String** (consigliata per Django): `postgresql://user:password@host/dbname?pgbouncer=true`
--
--> ⚠️ **Importante**: Copia la **Pooled Connection String** perché verrà usata nel passo successivo.
--
--**Vantaggi Neon**:
--- Database serverless con autoscaling
--- Branching e point-in-time recovery
--- Ottimo per sviluppo e produzione leggera
--
--[Torna su](#-indice)
--
-----
--
--### Opzione B: Supabase (PostgreSQL)
--
--1. Vai su [Supabase](https://supabase.com) e crea un account (gratuito)
--2. Crea un nuovo progetto:
--   - Clicca su **"New Project"**
--   - Inserisci un nome (es. `my-django-app`)
--   - Imposta una password per il database (salvala!)
--   - Scegli la regione più vicina a te
--   - Clicca su **"Create New Project"** (attendere il provisioning, ~2 minuti)
--3. Nella dashboard, vai su **Settings > Database**
--4. Troverai le credenziali di connessione:
--   - **Connection String**: `postgresql://postgres:password@host:5432/postgres`
--   - **Connection Pooler** (consigliata per Django): usa la porta `6543` invece di `5432`
--   - Esempio: `postgresql://postgres:password@host:6543/postgres`
--
--> ⚠️ **Importante**: Usa la stringa con il **connection pooler** (porta 6543 per Supabase).
--
--**Vantaggi Supabase**:
--- Piattaforma completa (autenticazione, storage, API REST)
--- Interfaccia utente intuitiva
--- Ottimo per progetti che cresceranno
--
--[Torna su](#-indice)
--
-----
--
--### Opzione C: MariaDB (con Aiven)
--
--Aiven offre un piano gratuito permanente per MariaDB, perfetto per chi preferisce MySQL/MariaDB.
--
--1. Vai su [Aiven](https://aiven.io) e crea un account (gratuito)
--2. Crea un nuovo servizio MariaDB:
--   - Clicca su **"Create Service"**
--   - Scegli **"MariaDB"** come tipo di servizio
--   - Seleziona il piano **"Free"** (gratuito, 1GB di storage)
--   - Scegli il cloud provider e la regione (es. `Google Cloud - europe-west3` per l'Europa)
--   - Dai un nome al servizio (es. `my-django-mariadb`)
--   - Clicca su **"Create Service"**
--3. Attendere il provisioning del servizio (pochi minuti)
--4. Nella dashboard del servizio, vai su **"Connection Information"**:
--   - Troverai i dettagli di connessione:
--     - **Host**: `my-django-mariadb-project.aivencloud.com`
--     - **Port**: `12345` (o la porta assegnata)
--     - **Database**: `defaultdb`
--     - **Username**: `avnadmin`
--     - **Password**: (la password generata automaticamente)
--   - Stringa di connessione completa:
--     ```
--     mysql://avnadmin:password@host:port/defaultdb
--     ```
--
--**Vantaggi Aiven**:
--- Piano gratuito permanente
--- Backup automatici
--- Alta affidabilità e performance
--- Supporto per MariaDB/MySQL
--
--[Torna su](#-indice)
--
-----
--
--## 🐍 Passo 2: Preparare il Progetto Django per il Deploy
--
--### 2.1 Installare le dipendenze necessarie
--
--Nel tuo `requirements.txt`, assicurati di avere le dipendenze per il database scelto e per CORS:
--
--**Per PostgreSQL (Neon/Supabase)**:
--```txt
--Django>=4.0
--gunicorn>=20.0
--psycopg2-binary>=2.9.0
--dj-database-url>=2.0.0
--python-dotenv>=1.0.0
--django-cors-headers>=4.0.0
--```
--
--**Per MariaDB/MySQL (Aiven)**:
--```txt
--Django>=4.0
--gunicorn>=20.0
--mysqlclient>=2.2.0
--dj-database-url>=2.0.0
--python-dotenv>=1.0.0
--django-cors-headers>=4.0.0
--```
--
--> ⚠️ **Nota**: `mysqlclient` richiede dipendenze di sistema che installeremo nel Dockerfile.
--
--[Torna su](#-indice)
--
-----
--
--### 2.2 Configurare `settings.py` per PostgreSQL
--
--Modifica il tuo `settings.py` per leggere il database da una variabile d'ambiente e gestire CORS:
--
--```python
--import os
--# import dj_database_url
--from pathlib import Path
--
--# Build paths inside the project like this: BASE_DIR / 'subdir'.
--BASE_DIR = Path(__file__).resolve().parent.parent
--
--# SECURITY WARNING: keep the secret key used in production secret!
--SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-...')
--
--# SECURITY WARNING: don't run with debug turned on in production!
--DEBUG = os.environ.get('DEBUG', 'False') == 'True'
--
--ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
--
--# CORS Configuration (per il frontend Vue)
--CORS_ALLOW_ALL_ORIGINS = False  # Non usare in produzione
--CORS_ALLOWED_ORIGINS = os.environ.get('CORS_ALLOWED_ORIGINS', '').split(',')
--
--# Se vuoi permettere tutte le origini (SOLO PER SVILUPPO)
--# CORS_ALLOW_ALL_ORIGINS = True  # Solo per sviluppo!
--
--# Application definition
--INSTALLED_APPS = [
--    'django.contrib.admin',
--    'django.contrib.auth',
--    'django.contrib.contenttypes',
--    'django.contrib.sessions',
--    'django.contrib.messages',
--    'django.contrib.staticfiles',
--    'corsheaders',  # Aggiungi corsheaders
--    'rest_framework',  # Se usi Django REST Framework
--    # ... i tuoi app
--]
--
--MIDDLEWARE = [
--    'corsheaders.middleware.CorsMiddleware',  # Mettilo all'inizio
--    'django.middleware.security.SecurityMiddleware',
--    'django.contrib.sessions.middleware.SessionMiddleware',
--    'django.middleware.common.CommonMiddleware',
--    'django.middleware.csrf.CsrfViewMiddleware',
--    'django.contrib.auth.middleware.AuthenticationMiddleware',
--    'django.contrib.messages.middleware.MessageMiddleware',
--    'django.middleware.clickjacking.XFrameOptionsMiddleware',
--]
--
--# Database configuration for PostgreSQL
--DATABASES = {
--    "default": {
--        "ENGINE": "django.db.backends.postgresql",
--        "NAME": os.getenv("DB_NAME"),
--        "USER": os.getenv("DB_USER"),
--        "PASSWORD": os.getenv("DB_PASSWORD"),
--        "HOST": os.getenv("DB_HOST"),
--        "PORT": os.getenv("DB_PORT", "5432"),
--        "OPTIONS": {
--            "sslmode": "require",  # Neon requires SSL
--        },
--    }
--}
--
--# Static files (CSS, JavaScript, Images)
--STATIC_URL = '/static/'
--STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
--
--# Media files (opzionale, per file upload)
--MEDIA_URL = '/media/'
--MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
--```
--
--[Torna su](#-indice)
--
-----
--
--### 2.3 Configurare `settings.py` per MariaDB
--
--Se usi MariaDB/MySQL, la configurazione è leggermente diversa:
--
--```python
--import os
--import dj_database_url
--from pathlib import Path
--
--# Build paths inside the project like this: BASE_DIR / 'subdir'.
--BASE_DIR = Path(__file__).resolve().parent.parent
--
--# SECURITY WARNING: keep the secret key used in production secret!
--SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-...')
--
--# SECURITY WARNING: don't run with debug turned on in production!
--DEBUG = os.environ.get('DEBUG', 'False') == 'True'
--
--ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
--
--# CORS Configuration (per il frontend Vue)
--CORS_ALLOWED_ORIGINS = os.environ.get('CORS_ALLOWED_ORIGINS', '').split(',')
--
--# Application definition
--INSTALLED_APPS = [
--    'django.contrib.admin',
--    'django.contrib.auth',
--    'django.contrib.contenttypes',
--    'django.contrib.sessions',
--    'django.contrib.messages',
--    'django.contrib.staticfiles',
--    'corsheaders',  # Aggiungi corsheaders
--    'rest_framework',  # Se usi Django REST Framework
--    # ... i tuoi app
--]
--
--MIDDLEWARE = [
--    'corsheaders.middleware.CorsMiddleware',  # Mettilo all'inizio
--    'django.middleware.security.SecurityMiddleware',
--    'django.contrib.sessions.middleware.SessionMiddleware',
--    'django.middleware.common.CommonMiddleware',
--    'django.middleware.csrf.CsrfViewMiddleware',
--    'django.contrib.auth.middleware.AuthenticationMiddleware',
--    'django.contrib.messages.middleware.MessageMiddleware',
--    'django.middleware.clickjacking.XFrameOptionsMiddleware',
--]
--
--# Database configuration for MariaDB/MySQL
--# Note: dj-database-url supporta anche MySQL
--DATABASES = {
--    'default': dj_database_url.config(
--        default='sqlite:///db.sqlite3',
--        conn_max_age=600,
--        conn_health_checks=True,
--        engine='django.db.backends.mysql',  # Specifica il backend MySQL
--    )
--}
--
--# Opzioni aggiuntive per MariaDB/MySQL
--DATABASES['default']['OPTIONS'] = {
--    'charset': 'utf8mb4',
--    'use_unicode': True,
--    'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
--}
--
--# Static files (CSS, JavaScript, Images)
--STATIC_URL = '/static/'
--STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
--
--# Media files (opzionale, per file upload)
--MEDIA_URL = '/media/'
--MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
--```
--
--**Alternativa con parsing manuale per MariaDB** (se `dj-database-url` non funziona bene):
--
--```python
--import os
--from urllib.parse import urlparse
--
--# Database configuration for MariaDB/MySQL (manual parsing)
--DATABASES = {
--    'default': {
--        'ENGINE': 'django.db.backends.mysql',
--        'NAME': os.environ.get('DB_NAME', 'defaultdb'),
--        'USER': os.environ.get('DB_USER', 'avnadmin'),
--        'PASSWORD': os.environ.get('DB_PASSWORD', ''),
--        'HOST': os.environ.get('DB_HOST', 'localhost'),
--        'PORT': os.environ.get('DB_PORT', '3306'),
--        'OPTIONS': {
--            'charset': 'utf8mb4',
--            'use_unicode': True,
--            'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
--        },
--    }
--}
--```
--
--[Torna su](#-indice)
--
-----
--
--### 2.4 Creare il `Dockerfile` per Django
--
--Crea un file `Dockerfile` nella root del progetto Django:
--
--**Per PostgreSQL**:
--```dockerfile
--# Usa l'immagine ufficiale di Python
--FROM python:3.11-slim
--
--# Imposta la directory di lavoro
--WORKDIR /app
--
--# Imposta variabili d'ambiente
--ENV PYTHONDONTWRITEBYTECODE 1
--ENV PYTHONUNBUFFERED 1
--
--# Installa le dipendenze di sistema necessarie
--RUN apt-get update && apt-get install -y \
--    gcc \
--    libpq-dev \
--    && rm -rf /var/lib/apt/lists/*
--
--# Copia il file requirements e installa le dipendenze Python
--COPY requirements.txt .
--RUN pip install --no-cache-dir -r requirements.txt
--
--# Copia il codice sorgente
--COPY . .
--
--# Crea la directory per i file statici
--RUN python manage.py collectstatic --noinput
--
--# Espone la porta su cui gunicorn ascolterà
--EXPOSE 8000
--
--# Comando per avviare l'applicazione
--CMD ["gunicorn", "--bind", "0.0.0.0:8000", "your_project.wsgi:application"]
--```
--
--**Per MariaDB/MySQL**:
--```dockerfile
--# Usa l'immagine ufficiale di Python
--FROM python:3.11-slim
--
--# Imposta la directory di lavoro
--WORKDIR /app
--
--# Imposta variabili d'ambiente
--ENV PYTHONDONTWRITEBYTECODE 1
--ENV PYTHONUNBUFFERED 1
--
--# Installa le dipendenze di sistema necessarie per MySQL/MariaDB
--RUN apt-get update && apt-get install -y \
--    gcc \
--    default-libmysqlclient-dev \
--    pkg-config \
--    && rm -rf /var/lib/apt/lists/*
--
--# Copia il file requirements e installa le dipendenze Python
--COPY requirements.txt .
--RUN pip install --no-cache-dir -r requirements.txt
--
--# Copia il codice sorgente
--COPY . .
--
--# Crea la directory per i file statici
--RUN python manage.py collectstatic --noinput
--
--# Espone la porta su cui gunicorn ascolterà
--EXPOSE 8000
--
--# Comando per avviare l'applicazione
--CMD ["gunicorn", "--bind", "0.0.0.0:8000", "your_project.wsgi:application"]
--```
--
--> ⚠️ Sostituisci `your_project` con il nome del tuo progetto Django.
--
--[Torna su](#-indice)
--
-----
--
--### 2.5 Creare il file `.dockerignore`
--
--Crea un file `.dockerignore` nella root del progetto Django:
--
--```
--venv/
--env/
--.git/
--__pycache__/
--*.pyc
--*.pyo
--*.pyd
--*.db
--*.sqlite3
--.DS_Store
--.gitignore
--README.md
--.env
--*.log
--media/
--frontend/
--node_modules/
--dist/
--```
--
--[Torna su](#-indice)
--
-----
--
--### 2.6 Caricare il codice su GitHub
--
--Assicurati che tutto il codice sia stato commitato e pushato su GitHub:
--
--```bash
--git add .
--git commit -m "Preparazione per deploy su Render"
--git push origin main
--```
--
--[Torna su](#-indice)
--
-----
--
--## 🚀 Passo 3: Deploy del Backend Django su Render
--
--### 3.1 Creare il Web Service
--
--1. Accedi a [Render Dashboard](https://dashboard.render.com)
--2. Clicca su **"New +"** e seleziona **"Web Service"**
--3. Connetti il tuo repository GitHub
--4. Seleziona il repository del progetto Django
--
--[Torna su](#-indice)
--
-----
--
--### 3.2 Configurare il Web Service
--
--Compila i campi come segue:
--
--- **Name**: `nome-del-tuo-progetto-backend` (es. `my-django-app-backend`)
--- **Environment**: `Docker`
--- **Region**: Scegli la regione più vicina (preferibilmente la stessa del database)
--- **Branch**: `main` (o il branch che vuoi deployare)
--
--**Se il backend è in una sottocartella** (monorepo):
--- **Root Directory**: `backend/` (il percorso della sottocartella)
--
--[Torna su](#-indice)
--
-----
--
--### 3.3 Configurare il Docker Command
--
--Nella sezione **"Docker Command"**, inserisci:
--
--```bash
--/bin/sh -c "pip install -r requirements.txt ; python manage.py migrate ; echo 'from django.contrib.auth import get_user_model; User = get_user_model(); User.objects.filter(username=\"admin\").exists() or User.objects.create_superuser(\"admin\", \"admin@example.com\", \"admin123\")' | python manage.py shell ; python manage.py loaddata dump.json ; gunicorn --bind 0.0.0.0:8000 your_project.wsgi:application"
--```
--
--> ⚠️ Sostituisci `your_project` con il nome del tuo progetto.
--
--**Spiegazione del comando**:
--- `pip install -r requirements.txt` - Installa le dipendenze
--- `python manage.py migrate` - Esegue le migrazioni
--- `echo '...' | python manage.py shell` - Crea il superutente solo se non esiste già (evita errori al successivo deploy)
--- `python manage.py loaddata dump.json` - Carica i dati iniziali (se hai un file `dump.json`)
--- `gunicorn ...` - Avvia il server
--
--**Alternativa con entrypoint.sh (più pulita)**:
--
--Crea uno script `entrypoint.sh` nella root del progetto Django:
--
--```bash
--#!/bin/bash
--# entrypoint.sh
--
--# echo "=== Installando dipendenze ==="
--# pip install -r requirements.txt
--
--echo "=== Eseguendo migrazioni ==="
--python manage.py migrate
--
--echo "=== Creando superuser (se non esiste) ==="
--python manage.py shell <<EOF
--from django.contrib.auth import get_user_model
--User = get_user_model()
--if not User.objects.filter(username="admin").exists():
--    User.objects.create_superuser("admin", "admin@example.com", "admin123")
--    print("Superuser creato!")
--EOF
--
--echo "=== Caricando dati iniziali ==="
--if [ -f "dump.json" ]; then
--    python manage.py loaddata dump.json
--else
--    echo "File dump.json non trovato, salto il caricamento"
--fi
--
--echo "=== Testing wsgi import ==="
--python -c "import bookshelf.wsgi" && echo "OK" || echo "FAILED"
--echo "=== Avviando Gunicorn ==="
--# gunicorn --bind 0.0.0.0:8000 bookshelf.wsgi:application
--gunicorn --bind 0.0.0.0:${PORT:-8000} bookshelf.wsgi:application
--
--
--```
--
--Rendi eseguibile lo script:
--```bash
--chmod +x entrypoint.sh
--```
--
--E modifica il Docker Command su Render:
--```bash
--./entrypoint.sh
--```
--
--[Torna su](#-indice)
--
-----
--
--### 3.4 Configurare le Variabili d'Ambiente
--
--Nella sezione **"Environment Variables"** di Render, aggiungi:
--
--**Per PostgreSQL (Neon/Supabase)**:
--
--| Variabile | Valore |
--|-----------|--------|
--| `DB_NAME` | Il nome del database (es. `neondb`) |
--| `DB_USER` | L'username del database |
--| `DB_PASSWORD` | La password del database |
--| `DB_HOST` | L'host del database (es. `ep-xyz.us-east-1.aws.neon.tech`) |
--| `DB_PORT` | `5432` (per Neon) o `6543` (per Supabase pooled) |
--| `SECRET_KEY` | Una chiave segreta lunga e casuale (es. generata con `openssl rand -hex 32`) |
--| `DEBUG` | `False` |
--| `ALLOWED_HOSTS` | `localhost,127.0.0.1,nome-tuo-progetto-backend.onrender.com` |
--| `CORS_ALLOWED_ORIGINS` | `https://nome-tuo-progetto-frontend.onrender.com` |
--
--**Per MariaDB/MySQL (Aiven)**:
--
--| Variabile | Valore |
--|-----------|--------|
--| `DB_NAME` | `defaultdb` |
--| `DB_USER` | `avnadmin` |
--| `DB_PASSWORD` | La password generata da Aiven |
--| `DB_HOST` | L'host di Aiven (es. `my-project.aivencloud.com`) |
--| `DB_PORT` | La porta di Aiven (es. `12345`) |
--| `SECRET_KEY` | Una chiave segreta lunga e casuale |
--| `DEBUG` | `False` |
--| `ALLOWED_HOSTS` | `localhost,127.0.0.1,nome-tuo-progetto-backend.onrender.com` |
--| `CORS_ALLOWED_ORIGINS` | `https://nome-tuo-progetto-frontend.onrender.com` |
--
--[Torna su](#-indice)
--
-----
--
--### 3.5 Avviare il Deploy
--
--1. Clicca su **"Create Web Service"**
--2. Render inizierà a costruire l'immagine Docker
--3. Al primo avvio, eseguirà il Docker Command con tutte le operazioni di setup
--4. Aspetta che il deploy sia completato (potrebbe richiedere qualche minuto)
--
--[Torna su](#-indice)
--
-----
--
--## ✅ Passo 4: Verificare il Deploy del Backend
--
--1. Nella dashboard di Render, clicca sull'URL del servizio (es. `https://nome-tuo-progetto-backend.onrender.com`)
--2. Dovresti vedere la tua applicazione Django in esecuzione
--3. Verifica l'accesso all'admin: `https://nome-tuo-progetto-backend.onrender.com/admin`
--4. Accedi con le credenziali create (username: `admin`, password: `admin123`)
--5. Verifica che le API siano accessibili: `https://nome-tuo-progetto-backend.onrender.com/api/` (se hai API)
--
--[Torna su](#-indice)
--
-----
--
--## 🔄 Passo 5: Aggiornare il Backend
--
--Quando fai modifiche al codice:
--
--1. Fai commit e push su GitHub:
--```bash
--git add .
--git commit -m "Aggiornamento backend"
--git push origin main
--```
--
--2. Render rileverà automaticamente il cambio e farà il redeploy
--3. Il Docker Command verrà eseguito di nuovo (migrazioni, creazione superuser solo se non esiste, caricamento dati)
--
--[Torna su](#-indice)
--
-----
--
--## 🖥️ Passo 6: Preparare il Frontend Vue.js per il Deploy Containerizzato
--
--### 6.1 Struttura del Progetto Vue.js
--
--Assicurati che il tuo progetto Vue.js abbia una struttura simile a questa:
--
--```text
--frontend/
--├── public/
--├── src/
--│   ├── main.js
--│   ├── App.vue
--│   ├── components/
--│   ├── views/
--│   ├── plugins/
--│   │   └── api.js         # Configurazione fetch
--│   └── utils/
--│       └── fetch.js       # Funzioni fetch personalizzate
--├── package.json
--├── vite.config.js
--├── Dockerfile             # Per il deploy containerizzato
--├── .env.production
--└── nginx.conf             # Configurazione Nginx (opzionale)
--```
--
--[Torna su](#-indice)
--
-----
--
--### 6.2 Configurare le Variabili d'Ambiente di Vue.js
--
--Crea un file `.env.production` nella root del progetto Vue:
--
--Non utili in questo caso
--
--[Torna su](#-indice)
--
-----
--
--### 6.3 Configurare `vite.config.js`
--
--configurare invece vite.config per il HMR con watch in dev mode
--
--```javascript
--import { fileURLToPath, URL } from 'node:url'
--
--import { defineConfig } from 'vite'
--import vue from '@vitejs/plugin-vue'
--import vueDevTools from 'vite-plugin-vue-devtools'
--
--// https://vite.dev/config/
--export default defineConfig({
--  plugins: [vue(), vueDevTools()],
--  resolve: {
--    alias: {
--      '@': fileURLToPath(new URL('./src', import.meta.url)),
--    },
--  },
--  // server watch per HMR in dev
--  server: {  
--    host: '0.0.0.0',
--    port: 5173,
--    watch: {   // <---
--      usePolling: true,
--      interval: 300,
--    },
--  },
--})
--```
--
--[Torna su](#-indice)
--
-----
--
--### 6.4 Utilizzare `fetch` per le Chiamate API
--
--#### 6.4.1 Creare il modulo API con `fetch`
--
--Crea un file `src/plugins/api.js`:
--
--```javascript
--// src/plugins/api.js
--
--// Configurazione base
--const API_BASE_URL = process.env.VUE_APP_API_URL || 'http://localhost:8000';
--
--// Funzione helper per gestire le risposte
--const handleResponse = async (response) => {
--  if (!response.ok) {
--    const errorData = await response.json().catch(() => ({}));
--    throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
--  }
--  return response.json();
--};
--
--// Funzione per fare richieste GET
--export const get = async (endpoint, headers = {}) => {
--  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
--    method: 'GET',
--    headers: {
--      'Content-Type': 'application/json',
--      ...headers,
--    },
--  });
--  return handleResponse(response);
--};
--
--// Funzione per fare richieste POST
--export const post = async (endpoint, data = {}, headers = {}) => {
--  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
--    method: 'POST',
--    headers: {
--      'Content-Type': 'application/json',
--      ...headers,
--    },
--    body: JSON.stringify(data),
--  });
--  return handleResponse(response);
--};
--
--// Funzione per fare richieste PUT
--export const put = async (endpoint, data = {}, headers = {}) => {
--  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
--    method: 'PUT',
--    headers: {
--      'Content-Type': 'application/json',
--      ...headers,
--    },
--    body: JSON.stringify(data),
--  });
--  return handleResponse(response);
--};
--
--// Funzione per fare richieste DELETE
--export const del = async (endpoint, headers = {}) => {
--  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
--    method: 'DELETE',
--    headers: {
--      'Content-Type': 'application/json',
--      ...headers,
--    },
--  });
--  return handleResponse(response);
--};
--
--// Funzione per upload file
--export const uploadFile = async (endpoint, file, headers = {}) => {
--  const formData = new FormData();
--  formData.append('file', file);
--  
--  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
--    method: 'POST',
--    headers: {
--      ...headers,
--    },
--    body: formData,
--  });
--  return handleResponse(response);
--};
--
--// Funzione generica per fetch con opzioni personalizzate
--export const fetchApi = async (endpoint, options = {}) => {
--  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
--    ...options,
--    headers: {
--      'Content-Type': 'application/json',
--      ...options.headers,
--    },
--  });
--  return handleResponse(response);
--};
--
--export default {
--  get,
--  post,
--  put,
--  del,
--  uploadFile,
--  fetchApi,
--};
--```
--
--#### 6.4.2 Esempio di utilizzo in un componente Vue
--
--```vue
--<template>
--  <div>
--    <h2>Lista Utenti</h2>
--    <ul>
--      <li v-for="user in users" :key="user.id">
--        {{ user.username }} - {{ user.email }}
--      </li>
--    </ul>
--    <button @click="fetchUsers">Carica Utenti</button>
--    <button @click="addUser">Aggiungi Utente</button>
--  </div>
--</template>
--
--<script setup>
--import { ref, onMounted } from 'vue';
--import { get, post } from '@/plugins/api';
--
--const users = ref([]);
--const loading = ref(false);
--const error = ref(null);
--
--const fetchUsers = async () => {
--  loading.value = true;
--  error.value = null;
--  try {
--    const data = await get('/api/users/');
--    // user.value = await get('/api/users/');
--    user.value = data.results // depends on the data fetched
--  } catch (err) {
--    error.value = err.message;
--    console.error('Errore nel caricamento degli utenti:', err);
--  } finally {
--    loading.value = false;
--  }
--};
--
--const addUser = async () => {
--  try {
--    const newUser = await post('/api/users/', {
--      username: 'nuovo_utente',
--      email: 'nuovo@example.com',
--    });
--    users.value.push(newUser);
--  } catch (err) {
--    console.error('Errore nella creazione utente:', err);
--  }
--};
--
--onMounted(() => {
--  fetchUsers();
--});
--</script>
--```
--
--#### 6.4.3 Gestione degli errori centralizzata
--
--Crea un file `src/utils/fetch.js` per una gestione più avanzata:
--
--```javascript
--// src/utils/fetch.js
--
--export class ApiError extends Error {
--  constructor(message, status, data) {
--    super(message);
--    this.name = 'ApiError';
--    this.status = status;
--    this.data = data;
--  }
--}
--
--export const fetchWithTimeout = async (url, options = {}, timeout = 10000) => {
--  const controller = new AbortController();
--  const timeoutId = setTimeout(() => controller.abort(), timeout);
--
--  try {
--    const response = await fetch(url, {
--      ...options,
--      signal: controller.signal,
--    });
--    clearTimeout(timeoutId);
--    return response;
--  } catch (error) {
--    clearTimeout(timeoutId);
--    if (error.name === 'AbortError') {
--      throw new Error('Richiesta timeout');
--    }
--    throw error;
--  }
--};
--
--export const fetchJson = async (url, options = {}) => {
--  try {
--    const response = await fetchWithTimeout(url, options);
--    
--    if (!response.ok) {
--      let errorData = {};
--      try {
--        errorData = await response.json();
--      } catch (e) {
--        // Se la risposta non è JSON
--      }
--      throw new ApiError(
--        errorData.message || `HTTP error! status: ${response.status}`,
--        response.status,
--        errorData
--      );
--    }
--    
--    return response.json();
--  } catch (error) {
--    console.error('API Error:', error);
--    throw error;
--  }
--};
--```
--
--[Torna su](#-indice)
--
-----
--
--### 6.5 Creare il `Dockerfile` per Vue.js
--
--Crea un file `Dockerfile` nella root del progetto Vue:
--
--```dockerfile
--# ============================================
--# DEVELOPMENT STAGE
--# ============================================
--# Use Node.js 20 slim image as the base for development
--FROM node:20-slim AS development
--
--# Set the working directory inside the container
--WORKDIR /app
--
--# Copy package.json and package-lock.json first (for better layer caching)
--COPY package*.json ./
--# Install all dependencies (including dev dependencies for development)
--RUN npm install
--
--# Copy the rest of the application source code
--COPY . .
--
--# Expose port 5173 (Vite's default development server port)
--EXPOSE 5173
--
--# Start the Vite development server, binding to all network interfaces
--# This allows access from outside the container (e.g., from host machine)
--CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
--
--
--# ============================================
--# BUILD STAGE (for production)
--# ============================================
--# Use Node.js 20 slim image for building the production bundle
--FROM node:20-slim AS build
--
--# Declare the build arg so Render (or docker compose) can pass it in
--# Vite embeds this value into the bundle at build time
--# This allows the frontend to know the backend API URL at runtime
--ARG VITE_API_URL
--# Set the environment variable from the build argument
--ENV VITE_API_URL=$VITE_API_URL
--
--# Set the working directory inside the container
--WORKDIR /app
--
--# Copy package.json and package-lock.json first (for better layer caching)
--COPY package*.json ./
--# Install all dependencies (including dev dependencies needed for building)
--RUN npm install
--
--# Copy the rest of the application source code
--COPY . .
--# Build the production bundle (creates the 'dist' folder)
--RUN npm run build
--
--
--# ============================================
--# PRODUCTION STAGE (serves built files with Nginx)
--# ============================================
--# Use lightweight Nginx Alpine image for serving static files
--FROM nginx:alpine AS production
--
--# Copy the built static files from the build stage to Nginx's serving directory
--COPY --from=build /app/dist /usr/share/nginx/html
--
--# Uncomment if you use Vue Router in history mode (fixes 404 on page refresh):
--# Copy custom Nginx configuration to handle client-side routing
--COPY nginx.conf /etc/nginx/conf.d/default.conf
--
--# Expose port 80 (default HTTP port for Nginx)
--EXPOSE 80
--
--# Start Nginx in the foreground (required for Docker to keep the container running)
--CMD ["nginx", "-g", "daemon off;"]
--
--[Torna su](#-indice)
--
-----
--
--### 6.6 Creare il file `.dockerignore` per Vue.js
--
--Crea un file `.dockerignore` nella root del progetto Vue:
--
--```
--node_modules/
--dist/
--.git/
--.gitignore
--README.md
--*.log
--.env.local
--.env.*.local
--.DS_Store
--*.suo
--*.ntvs*
--*.njsproj
--*.sln
--*.sw?
--```
--
--[Torna su](#-indice)
--
-----
--
--### 6.7 Caricare il codice su GitHub
--
--Assicurati che tutto il codice sia stato commitato e pushato su GitHub:
--
--```bash
--git add .
--git commit -m "Preparazione frontend Vue per deploy containerizzato"
--git push origin main
--```
--
--[Torna su](#-indice)
--
-----
--
--## 🚀 Passo 7: Deploy del Frontend Vue.js Containerizzato su Render
--
--### 7.1 Creare il Web Service per il Frontend
--
--1. Accedi a [Render Dashboard](https://dashboard.render.com)
--2. Clicca su **"New +"** e seleziona **"Web Service"**
--3. Connetti il tuo repository GitHub
--4. Seleziona il repository del progetto Vue.js
--
--[Torna su](#-indice)
--
-----
--
--### 7.2 Configurare il Web Service
--
--Compila i campi come segue:
--
--- **Name**: `nome-del-tuo-progetto-frontend` (es. `my-vue-app-frontend`)
--- **Environment**: `Docker`
--- **Region**: Scegli la regione più vicina (preferibilmente la stessa del backend)
--- **Branch**: `main` (o il branch che vuoi deployare)
--
--**Se il frontend è in una sottocartella** (monorepo):
--- **Root Directory**: `frontend/` (il percorso della sottocartella)
--
--**Docker Build Options**:
--- **Dockerfile Path**: `frontend/Dockerfile` (se il Dockerfile è nella sottocartella)
--
--[Torna su](#-indice)
--
-----
--
--### 7.3 Configurare il Docker Command
--
--Nella sezione **"Docker Command"**, lascia vuoto o inserisci:
--
--```bash
--nginx -g "daemon off;"
--```
--
--Oppure, se usi l'immagine Node.js con serve:
--
--```bash
--serve -s dist -l 5000
--```
--
--> ⚠️ **Nota**: Render eseguirà il comando CMD definito nel Dockerfile. Se il Dockerfile ha il CMD corretto, puoi lasciare vuoto il campo Docker Command.
--
--[Torna su](#-indice)
--
-----
--
--### 7.4 Configurare le Variabili d'Ambiente
--
--Nella sezione **"Environment Variables"** di Render, aggiungi:
--
--| Variabile | Valore |
--|-----------|--------|
--| `VUE_APP_API_URL` | `https://nome-tuo-progetto-backend.onrender.com` |
--| `VUE_APP_BASE_URL` | `https://nome-tuo-progetto-frontend.onrender.com` |
--
--> ⚠️ **Importante**: Le variabili d'ambiente su Render per container Docker vengono **iniettate al momento del build**, non al runtime. Per questo motivo, le variabili `VUE_APP_*` devono essere disponibili durante il `npm run build`.
--
--**Problema**: Le variabili d'ambiente di Render non vengono automaticamente passate al build del container Docker.
--
--**Soluzione**: Usa Build Arguments in Render:
--
--1. Nella sezione **"Advanced"** durante la creazione del Web Service
--2. Clicca su **"Add Build Argument"**
--3. Aggiungi:
--   - `VUE_APP_API_URL` = `https://nome-tuo-progetto-backend.onrender.com`
--
--Oppure, modifica il Dockerfile (come fatto per questo progetto) per accettare Build Arguments:  (come in questo caso)
--
--```dockerfile
--...
--# ============================================
--# BUILD STAGE (for production)
--# ============================================
--# Use Node.js 20 slim image for building the production bundle
--FROM node:20-slim AS build
--
--# Declare the build arg so Render (or docker compose) can pass it in
--# Vite embeds this value into the bundle at build time
--# This allows the frontend to know the backend API URL at runtime
--ARG VITE_API_URL
--# Set the environment variable from the build argument
--ENV VITE_API_URL=$VITE_API_URL
--
--# Set the working directory inside the container
--WORKDIR /app
--
--# Copy package.json and package-lock.json first (for better layer caching)
--COPY package*.json ./
--# Install all dependencies (including dev dependencies needed for building)
--RUN npm install
--
--# Copy the rest of the application source code
--COPY . .
--# Build the production bundle (creates the 'dist' folder)
--RUN npm run build
--...
--```
--
--**Alternativa (sconsigliata per produzione)**: Usa un file `.env.production` con valori hardcoded.
--
--[Torna su](#-indice)
--
-----
--
--### 7.5 Avviare il Deploy
--
--1. Clicca su **"Create Web Service"**
--2. Render inizierà a costruire l'immagine Docker del frontend
--3. Una volta completato, avrai un URL come `https://nome-tuo-progetto-frontend.onrender.com`
--
--[Torna su](#-indice)
--
-----
--
--## 🌐 Configurazione CORS per il Collegamento Frontend-Backend
--
--Per permettere al frontend Vue.js di comunicare con il backend Django, devi configurare correttamente CORS.
--
--### 1. Configurare CORS su Django
--
--**Assicurati che**:
--
--1. `django-cors-headers` sia installato (`pip install django-cors-headers`)
--2. `corsheaders` sia in `INSTALLED_APPS`
--3. `corsheaders.middleware.CorsMiddleware` sia nel `MIDDLEWARE` (prima di `CommonMiddleware`)
--4. `CORS_ALLOWED_ORIGINS` sia impostato correttamente
--
--```python
--# In settings.py
--CORS_ALLOWED_ORIGINS = os.environ.get('CORS_ALLOWED_ORIGINS', '').split(',')
--
--# Esempio:
--# CORS_ALLOWED_ORIGINS = ['https://my-vue-app-frontend.onrender.com']
--```
--
--### 2. Verificare che le richieste arrivino al backend corretto
--
--Nel frontend, tutte le chiamate API devono usare l'URL completo del backend:
--
--```javascript
--// Corretto
--const response = await fetch('https://my-django-app-backend.onrender.com/api/users/');
--
--// Errato (senza l'URL completo)
--const response = await fetch('/api/users/');
--```
--
--### 3. Testare la connessione
--
--1. Apri la console del browser (F12)
--2. Cerca errori CORS come:
--   ```
--   Access to fetch at 'https://my-django-app-backend.onrender.com/api/' 
--   from origin 'https://my-vue-app-frontend.onrender.com' 
--   has been blocked by CORS policy
--   ```
--
--3. Se vedi questo errore, verifica la configurazione CORS sul backend
--
--[Torna su](#-indice)
--
-----
--
--## 📦 Strategie di Organizzazione del Repository
--
--### Strategia 1: Repository Singolo (Monorepo)
--
--**Struttura**:
--```
--il-tuo-repo/
--├── backend/
--│   ├── Dockerfile
--│   ├── requirements.txt
--│   ├── entrypoint.sh
--│   └── ... (codice Django)
--├── frontend/
--│   ├── Dockerfile
--│   ├── package.json
--│   ├── vue.config.js
--│   └── ... (codice Vue)
--└── README.md
--```
--
--**Su Render**:
--- Crea due Web Service separati
--- Per il backend: Root Directory = `backend/`
--- Per il frontend: Root Directory = `frontend/`
--
--**Vantaggi**:
--- Un unico repository da gestire
--- Versioni sincronizzate
--
--**Svantaggi**:
--- Repository più grande
--
--[Torna su](#-indice)
--
-----
--
--### Strategia 2: Repository Separati
--
--**Struttura**:
--```
--backend-repo/
--├── Dockerfile
--├── requirements.txt
--└── ... (codice Django)
--
--frontend-repo/
--├── Dockerfile
--├── package.json
--└── ... (codice Vue)
--```
--
--**Su Render**:
--- Crea due Web Service separati su repository diversi
--
--**Vantaggi**:
--- Deploy indipendenti
--- Repository più piccoli
--
--**Svantaggi**:
--- Gestione separata
--- Sincronizzazione manuale
--
--[Torna su](#-indice)
--
-----
--
--## ⚠️ Note Importanti
--
--### Cold Start su Render
--- Render sospende le applicazioni gratuite dopo 15 minuti di inattività
--- Quando ricevi una nuova richiesta, l'app viene riavviata (cold start)
--- Il cold start può richiedere fino a 30 secondi
--- **Impatto sul frontend**: La prima richiesta API potrebbe essere lenta
--
--### Backup del Database
--- **Neon**: Fornisce backup automatici e point-in-time recovery
--- **Supabase**: Fornisce backup automatici
--- **Aiven**: Fornisce backup automatici
--
--### Consigli per la Produzione
--- **Backend**:
--  - Cambia le credenziali di default (admin/admin123)
--  - Usa una `SECRET_KEY` robusta
--  - Imposta `DEBUG=False`
--  - Configura il logging per monitorare gli errori
--  - Usa HTTPS (Render lo fornisce automaticamente)
--  - Limita `CORS_ALLOWED_ORIGINS` agli URL del frontend
--
--- **Frontend**:
--  - Usa variabili d'ambiente per gli URL delle API
--  - Implementa gestione errori robusta
--  - Usa `_redirects` per Vue Router in modalità history
--  - Ottimizza il bundle (code splitting, lazy loading)
--
--### Differenze tra PostgreSQL e MariaDB
--
--| Caratteristica | PostgreSQL | MariaDB/MySQL |
--|----------------|------------|---------------|
--| **JSON Support** | Eccellente (JSONB) | Buono (JSON) |
--| **Full-Text Search** | Avanzata | Base |
--| **ACID Compliance** | Completa | Completa |
--| **Performance** | Ottima per dati complessi | Ottima per letture intensive |
--| **Estensioni** | Molte (PostGIS, etc.) | Limitate |
--
--[Torna su](#-indice)
--
-----
--
--## 🐛 Troubleshooting Comuni
--
--### Backend
--
--#### Errore: "Database not found"
--- Verifica che la `DATABASE_URL` sia corretta
--- Per Neon: assicurati di usare la stringa **pooled** (con `?pgbouncer=true`)
--- Per Supabase: assicurati di usare la porta `6543`
--- Per Aiven: verifica che il servizio sia attivo e le credenziali siano corrette
--
--#### Errore: "Superuser already exists"
--- Il comando nel Docker Command verifica già se esiste prima di crearlo
--- Se ottieni errori, controlla la sintassi dello script
--
--#### Errore: "ModuleNotFoundError: No module named 'your_project'"
--- Verifica che il nome del progetto in `gunicorn` sia corretto
--- Controlla che il file `wsgi.py` esista nella directory corretta
--
--#### Errore: "psycopg2.OperationalError: could not connect to server"
--- Per Supabase: verifica che l'indirizzo IP sia whitelistato (Settings > Database > Connection > "Allow all IPs")
--- Per Neon: verifica che la stringa di connessione sia corretta
--- Per Aiven: verifica che il servizio sia attivo
--
--#### Errore: "mysqlclient not found"
--- Verifica che `default-libmysqlclient-dev` sia installato nel Dockerfile
--- Assicurati che `mysqlclient` sia nel requirements.txt
--
--#### Errore: "Access denied for user"
--- Verifica che username e password siano corretti
--- Per Aiven: usa `avnadmin` come username
--
--[Torna su](#-indice)
--
-----
--
--### Frontend
--
--#### Errore: "API calls fail with CORS error"
--
--**Sintomo**:
--```
--Access to fetch at 'https://backend-url/api/' from origin 'https://frontend-url' 
--has been blocked by CORS policy
--```
--
--**Soluzione**:
--1. Verifica che `django-cors-headers` sia installato e configurato
--2. Controlla che `CORS_ALLOWED_ORIGINS` includa l'URL del frontend
--3. Verifica che `CORS_ALLOW_ALL_ORIGINS` sia `False` (per produzione)
--
--#### Errore: "404 Not Found on page refresh"
--
--**Sintomo**: Quando ricarichi una pagina del frontend, ricevi 404
--
--**Soluzione**: Il problema è Vue Router in modalità history. Devi configurare il server per reindirizzare tutte le richieste a `index.html`.
--
--**Con Nginx** (raccomandato):
--```nginx
--location / {
--    try_files $uri $uri/ /index.html;
--}
--```
--
--**Con Node.js serve**:
--```bash
--serve -s dist -l 5000
--```
--
--**Su Render** (Static Site):
--Aggiungi un file `_redirects` nella cartella `public/`:
--```txt
--/*    /index.html   200
--```
--
--#### Errore: "VUE_APP_API_URL not defined"
--
--**Sintomo**: Nel frontend, `process.env.VUE_APP_API_URL` è `undefined`
--
--**Soluzione**:
--1. Verifica che il file `.env.production` esista
--2. Verifica che la variabile inizi con `VUE_APP_`
--3. Se usi Build Arguments, assicurati che siano passati correttamente
--4. Nel codice, usa un fallback:
--   ```javascript
--   const API_URL = process.env.VUE_APP_API_URL || 'http://localhost:8000';
--   ```
--
--#### Errore: "Container fails to start"
--
--**Sintomo**: Il container del frontend non parte
--
--**Soluzioni**:
--1. Verifica che il Dockerfile sia corretto
--2. Controlla che il build (`npm run build`) venga eseguito con successo
--3. Verifica che la cartella `dist/` venga creata
--4. Assicurati che il CMD nel Dockerfile sia corretto
--5. Controlla i log di Render per dettagli specifici
--
--[Torna su](#-indice)
--
-----
--
--## 📊 Costo: Tutto Gratuito
--
--| Servizio | Costo | Note |
--|----------|------|------|
--| **Render Backend** | 💰 Gratuito | Web service con sospensione dopo 15 minuti di inattività |
--| **Render Frontend** | 💰 Gratuito | Web service con sospensione dopo 15 minuti di inattività |
--| **Neon** | 💰 Gratuito | Database PostgreSQL con 500 MB di storage, piano gratuito permanente |
--| **Supabase** | 💰 Gratuito | Database PostgreSQL con 500 MB di storage, piano gratuito permanente |
--| **Aiven** | 💰 Gratuito | Database MariaDB/MySQL con 1 GB di storage, piano gratuito permanente |
--
--**Totale**: €0,00 💸
--
--[Torna su](#-indice)
--
-----
--
--## 🎯 Riepilogo
--
--Hai configurato un'architettura completa con:
--
--1. ✅ **Database** esterno gratuito (PostgreSQL con Neon/Supabase o MariaDB con Aiven)
--2. ✅ **Backend Django** containerizzato su Render con setup automatico
--3. ✅ **Frontend Vue.js** containerizzato su Render con Nginx
--4. ✅ **Deploy continuo** da GitHub per entrambi
--5. ✅ **Comunicazione CORS** configurata correttamente
--6. ✅ **Tutto gratis**, senza scadenze di 30 giorni
--7. ✅ **Supporto** sia per PostgreSQL che per MariaDB
--
--**Scegli il database che preferisci:**
--- **PostgreSQL**: Migliore per JSON, Full-Text Search e funzionalità avanzate
--- **MariaDB**: Migliore per semplicità, performance in lettura e applicazioni tradizionali
--
--**Scegli la strategia di repository:**
--- **Monorepo**: Più semplice da gestire, un unico repository
--- **Repository separati**: Deploy indipendenti, più modulari
--
--[Torna su](#-indice)
--
-----
--
--## 📚 Risorse Utili
--
--- [Documentazione Render Docker](https://render.com/docs/docker)
--- [Documentazione Neon](https://neon.tech/docs/introduction)
--- [Documentazione Supabase](https://supabase.com/docs)
--- [Documentazione Aiven MariaDB](https://aiven.io/docs/products/mariadb)
--- [Guida Django Deploy su Render](https://render.com/docs/deploy-django)
--- [dj-database-url Documentazione](https://github.com/jacobian/dj-database-url)
--- [Django con MySQL/MariaDB](https://docs.djangoproject.com/en/stable/ref/databases/#mysql-notes)
--- [Django con PostgreSQL](https://docs.djangoproject.com/en/stable/ref/databases/#postgresql-notes)
--- [Vue.js Deploy con Nginx](https://vuejs.org/guide/best-practices/production-deployment)
--- [Vue Router History Mode](https://router.vuejs.org/guide/essentials/history-mode.html)
--- [Django CORS Headers](https://pypi.org/project/django-cors-headers/)
--- [Using fetch API](https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API)
--
--[Torna su](#-indice)
-\ No newline at end of file
-diff --git a/Git-command-cheatsheet.md b/Git-command-cheatsheet.md
-deleted file mode 100644
-index 5c72b72..0000000
---- a/Git-command-cheatsheet.md
-+++ /dev/null
-@@ -1,518 +0,0 @@
--# Ultimate Git Commands Cheat Sheet
--
--## 📋 Table of Contents
--- [Ultimate Git Commands Cheat Sheet](#ultimate-git-commands-cheat-sheet)
--  - [📋 Table of Contents](#-table-of-contents)
--  - [Configuration](#configuration)
--  - [Creating \& Cloning](#creating--cloning)
--  - [Basic Workflow](#basic-workflow)
--  - [Branching \& Merging](#branching--merging)
--  - [Remote Repositories](#remote-repositories)
--  - [History \& Inspection](#history--inspection)
--  - [Diff \& Inspection](#diff--inspection)
--  - [Undoing Changes](#undoing-changes)
--  - [Stashing](#stashing)
--  - [Advanced Commands](#advanced-commands)
--  - [Pro Tips \& Aliases](#pro-tips--aliases)
--    - [Useful Aliases](#useful-aliases)
--    - [Common Workflows](#common-workflows)
--    - [🤖 AI Workflow: Generating Commit Messages](#-ai-workflow-generating-commit-messages)
--    - [🔥 Quick Reference Table](#-quick-reference-table)
--  - [📚 Additional Resources](#-additional-resources)
--
-----
--
--## Configuration
--
--```bash
--# Set user information
--git config --global user.name "Your Name"
--git config --global user.email "your.email@example.com"
--
--# Set default editor
--git config --global core.editor "code --wait"  # VS Code
--git config --global core.editor "vim"          # Vim
--
--# View configuration
--git config --list
--git config --global --list
--
--# Set default branch name
--git config --global init.defaultBranch main
--
--# Color output
--git config --global color.ui auto
--
--# Aliases (shortcuts)
--git config --global alias.co checkout
--git config --global alias.br branch
--git config --global alias.st status
--git config --global alias.lg "log --oneline --graph --all"
--```
--
--[⬆ Back to Top](#-table-of-contents)
--
-----
--
--## Creating & Cloning
--
--```bash
--# Initialize a new repository
--git init
--git init -b main              # With specific branch name
--
--# Clone a repository
--git clone <repository-url>
--git clone <repository-url> <folder-name>
--git clone -b <branch-name> <repository-url>  # Clone specific branch
--git clone --depth 1 <repository-url>         # Shallow clone (faster)
--```
--
--[⬆ Back to Top](#-table-of-contents)
--
-----
--
--## Basic Workflow
--
--```bash
--# Check status
--git status
--git status -s                 # Short format
--
--# Add files to staging
--git add <file>
--git add .                     # Add all files
--git add -A                    # Add all files (including deleted)
--git add -p                    # Interactive patch selection
--
--# Commit changes
--git commit -m "Commit message"
--git commit -am "Message"      # Add and commit tracked files
--git commit --amend            # Modify last commit
--git commit --amend -m "New message"
--git commit --amend --no-edit  # Add staged changes to last commit
--```
--
--[⬆ Back to Top](#-table-of-contents)
--
-----
--
--## Branching & Merging
--
--```bash
--# List branches
--git branch                    # Local branches
--git branch -r                 # Remote branches
--git branch -a                 # All branches
--
--# Create branches
--git branch <branch-name>
--git checkout -b <branch-name> # Create and switch
--git switch -c <branch-name>   # Newer alternative
--
--# Switch branches
--git checkout <branch-name>
--git switch <branch-name>      # Newer alternative
--
--# Delete branches
--git branch -d <branch-name>   # Safe delete
--git push origin --delete <branch-name> # remote branch
--git branch -D <branch-name>   # Force delete
--
--# Rename branch
--git branch -m <new-name>
--git branch -m <old-name> <new-name>
--
--# Merge branches
--git merge <branch-name>
--git merge --no-ff <branch-name>  # No fast-forward
--git merge --abort                # Abort merge conflict
--
--# Rebase
--git rebase <branch-name>
--git rebase -i HEAD~n            # Interactive rebase last n commits
--git rebase --continue
--git rebase --abort
--
--# Show merged/unmerged branches
--git branch --merged
--git branch --no-merged
--```
--
--[⬆ Back to Top](#-table-of-contents)
--
-----
--
--## Remote Repositories
--
--```bash
--# List remotes
--git remote -v
--
--# Add remote
--git remote add <name> <url>
--git remote add origin <url>
--
--# Remove remote
--git remote remove <name>
--
--# Rename remote
--git remote rename <old> <new>
--
--# Fetch from remote
--git fetch
--git fetch <remote>
--git fetch --all                # Fetch all remotes
--git fetch --prune              # Fetch and remove stale refs
--
--# Pull changes
--git pull                       # Fetch + merge
--git pull --rebase              # Fetch + rebase
--git pull <remote> <branch>
--
--# Push changes
--git push
--git push <remote> <branch>
--git push -u origin <branch>    # Set upstream
--git push --force               # Force push (caution!)
--git push --force-with-lease    # Safer force push
--git push --tags                # Push tags
--git push --delete <remote> <branch>  # Delete remote branch
--git push origin :<branch-name> # Alternative delete syntax
--
--# Show remote information
--git remote show <remote>
--
--# Prune remote tracking branches
--git remote prune origin
--
--# Track a remote branch locally
--git checkout -b <local-branch> <remote>/<remote-branch>
--git checkout --track <remote>/<branch>  # Auto-create local branch
--
--# Set upstream branch
--git branch --set-upstream-to=<remote>/<branch>
--
--# Show upstream branches
--git branch -vv
--
--# Sync fork with upstream
--git remote add upstream <original-repo-url>
--git fetch upstream
--git checkout main
--git merge upstream/main
--git push origin main
--```
--
--[⬆ Back to Top](#-table-of-contents)
--
-----
--
--## History & Inspection
--
--```bash
--# View commit history
--git log
--git log --oneline
--git log --graph --oneline --all
--git log --stat                # Show stats
--git log -p                    # Show changes
--git log -n 10                 # Limit to 10 commits
--git log --since="2 weeks ago"
--git log --grep="pattern"      # Search commit messages
--
--# Show commits in a range
--git log <branch1>..<branch2>
--git log --left-right <branch1>...<branch2>
--
--# View a specific commit
--git show <commit-hash>
--git show <tag>
--git show HEAD~2
--
--# Show who changed what
--git blame <file>
--git blame -L 10,20 <file>     # Lines 10-20
--
--# Search for changes
--git grep "pattern"
--git grep -n "pattern"         # Show line numbers
--```
--
--[⬆ Back to Top](#-table-of-contents)
--
-----
--
--## Diff & Inspection
--
--```bash
--# View changes
--git diff                      # Working directory vs staging
--git diff --staged             # Staging vs last commit
--git diff --cached             # Same as --staged
--git diff <commit>             # Compare with specific commit
--git diff <branch1> <branch2>
--
--# View changes for specific file
--git diff <file>
--git diff --staged <file>
--
--# Export diff to file (useful for AI commit messages)
--git diff > diff.txt                      # Unstaged changes
--git diff --cached > diff.txt             # Staged changes
--git diff HEAD > diff.txt                 # All changes (staged + unstaged)
--git diff <commit1> <commit2> > diff.txt  # Between two commits
--
--# Compare commits
--git diff HEAD~1 HEAD           # Last commit changes
--git diff HEAD~2 HEAD           # Last 2 commits
--git diff HEAD~3..HEAD          # Range of commits
--
--# Show only names of changed files
--git diff --name-only
--git diff --name-status         # Show status (M/A/D)
--
--# Show stats
--git diff --stat
--git diff --shortstat
--
--# Show changes with context
--git diff -U5                   # 5 lines of context
--git diff --word-diff           # Word-level diff
--
--# Ignore whitespace
--git diff -w                    # Ignore whitespace changes
--git diff --ignore-space-at-eol
--
--# View changes in a specific commit
--git show <commit-hash>
--git show <commit-hash> --stat
--git show <commit-hash> > commit-diff.txt  # Export to file
--
--# View changes between branches
--git diff main..feature         # Changes in feature not in main
--git diff main...feature        # Changes in feature since branching from main
--```
--
--[⬆ Back to Top](#-table-of-contents)
--
-----
--
--## Undoing Changes
--
--```bash
--# Unstage files (keep changes)
--git reset HEAD <file>
--git restore --staged <file>   # Newer alternative
--
--# Discard changes in working directory
--git checkout -- <file>
--git restore <file>            # Newer alternative
--git restore .                 # All files
--
--# Reset to previous commit
--git reset --soft HEAD~1      # Keep changes staged
--git reset --mixed HEAD~1     # Keep changes unstaged (default)
--git reset --hard HEAD~1      # Discard all changes (DANGEROUS!)
--
--# Undo commit and keep changes
--git reset --soft HEAD^       # Undo last commit, keep changes
--
--# Revert a commit (safe undo)
--git revert <commit-hash>
--git revert HEAD               # Revert last commit
--
--# Clean untracked files
--git clean -n                  # Dry run
--git clean -f                  # Remove untracked files
--git clean -fd                 # Also remove directories
--```
--
--[⬆ Back to Top](#-table-of-contents)
--
-----
--
--## Stashing
--
--```bash
--# Save changes
--git stash
--git stash save "message"
--git stash push -m "message"
--
--# List stashes
--git stash list
--
--# Apply stash
--git stash apply               # Apply latest stash
--git stash apply stash@{2}     # Apply specific stash
--
--# Apply and drop
--git stash pop                 # Apply latest and remove
--git stash pop stash@{1}
--
--# View stash content
--git stash show
--git stash show -p             # Show full diff
--
--# Remove stash
--git stash drop                # Remove latest
--git stash drop stash@{1}
--git stash clear               # Remove all
--
--# Create branch from stash
--git stash branch <branch-name>
--```
--
--[⬆ Back to Top](#-table-of-contents)
--
-----
--
--## Advanced Commands
--
--```bash
--# Tags
--git tag                       # List tags
--git tag <tag-name>           # Create lightweight tag
--git tag -a <tag-name> -m "message"  # Annotated tag
--git tag -d <tag-name>        # Delete tag
--git push --tags               # Push all tags
--git push origin <tag-name>
--
--# Cherry-pick
--git cherry-pick <commit-hash>
--git cherry-pick <hash1> <hash2>
--git cherry-pick --continue
--git cherry-pick --abort
--
--# Bisect (find bug)
--git bisect start
--git bisect good <commit>      # Mark as good
--git bisect bad <commit>       # Mark as bad
--git bisect reset              # End bisect
--
--# Submodules
--git submodule add <url> <path>
--git submodule update --init --recursive
--git submodule foreach git pull
--
--# Worktrees
--git worktree add <path> <branch>
--git worktree list
--git worktree remove <path>
--
--# Reflog (recover lost commits)
--git reflog
--git reflog show <branch>
--git checkout HEAD@{n}         # Restore from reflog
--
--# Archive
--git archive --format=zip --output=archive.zip HEAD
--git archive --format=tar HEAD | gzip > archive.tar.gz
--
--# Hooks (scripts in .git/hooks/)
--# pre-commit, pre-push, post-merge, etc.
--```
--
--[⬆ Back to Top](#-table-of-contents)
--
-----
--
--## Pro Tips & Aliases
--
--### Useful Aliases
--Add these to your `.gitconfig`:
--
--```bash
--[alias]
--    co = checkout
--    br = branch
--    st = status
--    ci = commit
--    unstage = reset HEAD --
--    last = log -1 HEAD
--    tree = log --graph --oneline --all --decorate
--    lg = log --graph --pretty=format:'%Cred%h%Creset -%C(yellow)%d%Creset %s %Cgreen(%cr) %C(bold blue)<%an>%Creset' --abbrev-commit
--    undo = reset --soft HEAD^
--    amend = commit --amend --no-edit
--    wipe = !git add -A && git commit -m 'Wipe' && git reset --hard HEAD~
--    
--    # Diff exports for AI
--    diff-export = !git diff > diff.txt
--    diff-export-cached = !git diff --cached > diff.txt
--    diff-export-all = !git diff HEAD > diff.txt
--    
--    # Copy diff to clipboard (macOS)
--    diff-copy = !git diff | pbcopy
--    diff-copy-cached = !git diff --cached | pbcopy
--```
--
--### Common Workflows
--
--```bash
--# Quick commit all changes
--git add -A && git commit -m "Quick save"
--
--# Update feature branch with main
--git checkout feature
--git rebase main
--# or
--git merge main
--
--# Squash last 3 commits
--git rebase -i HEAD~3  # Then change 'pick' to 'squash' for commits to squash
--
--# Undo last push
--git reset --hard HEAD~1
--git push --force-with-lease
--
--# Clean up local merged branches
--git branch --merged | grep -v "\*" | xargs -n 1 git branch -d
--
--# Generate diff for AI commit message
--git diff > diff.txt
--# Ask AI: "Write a commit message for these changes"
--```
--
--### 🤖 AI Workflow: Generating Commit Messages
--
--```bash
--# Step 1: Export diff
--git diff --cached > diff.txt  # For staged changes
--# or
--git diff > diff.txt            # For unstaged changes
--
--# Step 2: Ask AI
--# "Here's the diff. Write a conventional commit message:"
--# [paste diff.txt content]
--
--# Step 3: Use the generated message
--git commit -m "$(cat commit-message.txt)"
--```
--
--### 🔥 Quick Reference Table
--
--| Task | Command |
--|------|---------|
--| Delete remote branch | `git push origin --delete <branch>` |
--| View remote branches | `git remote -v` |
--| Export diff for AI | `git diff > diff.txt` |
--| Export staged diff | `git diff --cached > diff.txt` |
--| View branch tracking | `git branch -vv` |
--| Prune remote branches | `git remote prune origin` |
--| Undo last commit (keep changes) | `git reset --soft HEAD^` |
--| Discard all local changes | `git restore .` |
--| Apply latest stash | `git stash pop` |
--| View pretty log | `git log --graph --oneline --all` |
--
-----
--
--**Remember**: Always be careful with `--force` and `--hard` flags. They can permanently delete work!
--
--## 📚 Additional Resources
--
--- [Official Git Documentation](https://git-scm.com/doc)
--- [GitHub Git Cheat Sheet](https://github.github.com/training-kit/downloads/github-git-cheat-sheet.pdf)
--- [Atlassian Git Tutorials](https://www.atlassian.com/git/tutorials)
--
--[⬆ Back to Top](#-table-of-contents)
-\ No newline at end of file
-diff --git a/Guide/deploy_flow.md b/Guide/deploy_flow.md
-deleted file mode 100644
-index ae57d6f..0000000
---- a/Guide/deploy_flow.md
-+++ /dev/null
-@@ -1,52 +0,0 @@
--# Step-by-Step Flow: Deploy della Webapp (Didattica)
--
--Questo documento descrive il flusso completo, passo dopo passo, per il deploy della vostra applicazione web containerizzata (Frontend Vue e Backend Django + MariaDB), sfruttando l'integrazione con GitHub per la CI/CD.
--
--L'architettura proposta separa il **Frontend statico**, hostato gratuitamente su Vercel, dal **Backend e Database**, eseguiti tramite Docker su un server VPS gratuito o economico.
--
-----
--
--## Fase 1: Deploy Automatico del Frontend (Vue) su Vercel
--Vercel è la strada più rapida e indolore per Vue: si aggancia a GitHub e compie le operazioni di build e deploy in modo autonomo a ogni `git push`.
--
--1. **Preparazione su GitHub:** Assicuratevi che il progetto Vue si trovi in una cartella specifica del repository (es. `/frontend`) o in un repository dedicato.
--2. **Collegamento a Vercel:**
--   * Accedete a Vercel utilizzando il vostro account GitHub.
--   * Cliccate su **Add New Project** e importate il repository.
--   * Vercel riconoscerà automaticamente il framework Vite/Vue e configurerà il comando di build.
--3. **Variabili d'ambiente:** Andate nelle impostazioni del progetto su Vercel (`Settings` -> `Environment Variables`) e aggiungete l'URL di produzione del vostro backend (es. `VUE_APP_API_BASE_URL=https://vostro-ip-backend.com`).
--4. **Deploy Iniziale e CI/CD:** Cliccate su **Deploy**. Da questo momento in poi, ogni `git push` sul branch principale farà scattare il build e aggiornerà il frontend live automaticamente.
--
-----
--
--## Fase 2: Configurazione del Backend (Django) e Database (MariaDB)
--
--1. **Predisporre il server:**
--   * Create la vostra macchina virtuale in cloud (es. VPS o Oracle Cloud Free Tier) ed accedete via SSH.
--   * Installate **Docker** e **Docker Compose** sul server.
--2. **Adattare la configurazione per la produzione:**
--   * Nel file `docker-compose.prod.yml` (o `docker-compose.yml`), mappate la porta del backend (es. 8000) e assicuratevi che il volume di MariaDB punti a una cartella fisica del server per salvare i dati in modo permanente.
--   * Impostate `DEBUG = False` nel file `settings.py` di Django e aggiungete l'IP pubblico del server o il dominio in `ALLOWED_HOSTS`.
--   * Configurate il pacchetto `django-cors-headers` per permettere all'URL di Vercel di comunicare con Django.
--3. **Trasferimento dei file:**
--   * Caricate i file del progetto (inclusi Dockerfile e docker-compose) sul server, ad esempio clonando il repository GitHub direttamente nella macchina virtuale (`git clone ...`).
--4. **Primo avvio manuale:**
--   * Entrate nella cartella del progetto via SSH.
--   * Lanciate il comando `docker-compose up -d --build` per avviare i container in background.
--   * Eseguite le migrazioni di Django all'interno del container: `docker-compose exec backend python manage.py migrate`.
--
-----
--
--## Fase 3: Automatizzare il Backend con GitHub Actions (CI/CD)
--Per evitare di dover accedere via SSH a ogni modifica del backend, potete configurare una pipeline di GitHub Actions.
--
--1. **Creazione dei Secret su GitHub:**
--   * Andate su GitHub nel vostro repository -> `Settings` -> `Secrets and variables` -> `Actions`.
--   * Aggiungete le variabili di accesso al server: `VPS_IP`, `VPS_USER`, `VPS_SSH_KEY` (la chiave privata SSH).
--2. **Scrittura del Workflow:**
--   * Create la cartella `.github/workflows/` nel vostro progetto.
--   * Al suo interno, create il file `deploy-backend.yml` per eseguire il pull del codice aggiornato sul server e il restart dei container tramite SSH.
--3. **Test del flusso:**
--   * Modificate il codice del backend in locale ed effettuate commit e push su GitHub.
--   * Controllate la scheda **Actions** su GitHub per verificare lo stato della pipeline.
--   * A pipeline completata, il server remoto avrà scaricato l'aggiornamento e riavviato i container.
-diff --git a/django-backend/bookshelf/settings.py b/django-backend/bookshelf/settings.py
-index 46a682f..e981f45 100644
---- a/django-backend/bookshelf/settings.py
-+++ b/django-backend/bookshelf/settings.py
-@@ -84,12 +84,9 @@ MIDDLEWARE = [
- ]
- 
- # Allow all origins (for development only)
--CORS_ALLOW_ALL_ORIGINS = True
--
--CORS_ALLOW_ORIGINS = [
--    'http://localhost:5173', # Vue dev server
--    'http://127.0.0.1:5173'
--]
-+# CORS_ALLOW_ALL_ORIGINS = True
-+# Read from .env — works for both local and production
-+CORS_ALLOWED_ORIGINS = os.getenv("CORS_ALLOWED_ORIGINS", "").split(",")
- 
- ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
- 
-diff --git a/struttura_env.txt b/struttura_env.txt
-index e2f506e..102cd9f 100644
---- a/struttura_env.txt
-+++ b/struttura_env.txt
-@@ -1,13 +1,13 @@
--# Credenziali Database
--DB_HOST=db
--DB_PORT=3306
--DB_NAME=vue_django
--DB_USER=root
--DB_PASSWORD=*******
--
--# Variabile specifica per l'inizializzazione del container MariaDB
--MARIADB_ROOT_PASSWORD=******
--
--
--
--
-+# Django
-+SECRET_KEY=django-insecure-************************
-+DEBUG=True
-+ALLOWED_HOSTS=localhost,127.0.0.1,webappdeployrenderdbesterno.onrender.com
-+CORS_ALLOWED_ORIGINS=http://localhost:5173,http://localhost:8080,https://webappdeployrenderdbesterno-frontend.onrender.com
+diff --git a/frontend-vue/src/components/LoadingSpinner.vue b/frontend-vue/src/components/LoadingSpinner.vue
+new file mode 100644
+index 0000000..59680a6
+--- /dev/null
++++ b/frontend-vue/src/components/LoadingSpinner.vue
+@@ -0,0 +1,24 @@
++<template>
++  <div class="spinner"></div>
++</template>
 +
-+# Neon PostgreSQL (get these from your Neon dashboard)
-+DB_ENGINE=django.db.backends.postgresql
-+DB_NAME=******
-+DB_USER=***********
-+DB_PASSWORD=*************
-+DB_HOST=ep-little-glade-as3kfjks.c-4.eu-central-1.aws.neon.tech
-+DB_PORT=5432
-\ No newline at end of file
++<style scoped>
++.spinner {
++  width: 20px;
++  height: 20px;
++  border: 5px solid #f3f3f3;
++  border-top: 5px solid #3498db;
++  border-radius: 50%;
++  animation: spin 1s linear infinite;
++  margin: 30% auto;
++}
++
++@keyframes spin {
++  0% {
++    transform: rotate(0deg);
++  }
++  100% {
++    transform: rotate(360deg);
++  }
++}
++</style>
+diff --git a/frontend-vue/src/views/DetailView.vue b/frontend-vue/src/views/DetailView.vue
+index 4bc1072..6aa493e 100644
+--- a/frontend-vue/src/views/DetailView.vue
++++ b/frontend-vue/src/views/DetailView.vue
+@@ -2,6 +2,7 @@
+ import { get } from '@/plugins/api'
+ import { onMounted, ref } from 'vue'
+ import { useRoute } from 'vue-router'
++import LoadingSpinner from '@/components/LoadingSpinner.vue'
+ 
+ const route = useRoute()
+ const product = ref(null)
+@@ -9,13 +10,13 @@ const error = ref('')
+ const loading = ref(false)
+ 
+ onMounted(async () => {
+-    loading.value = true
++  loading.value = true
+   const productId = route.params.id
+-  if (!productId){
++  if (!productId) {
+     error.value = 'Product ID not found'
+   }
+   try {
+-   product.value = await get(`/api/v1/scarpe/${productId}`)
++    product.value = await get(`/api/v1/scarpe/${productId}`)
+     loading.value = false
+     console.log({ product: product.value })
+   } catch (err) {
+@@ -25,10 +26,10 @@ onMounted(async () => {
+ </script>
+ 
+ <template>
++  <LoadingSpinner v-if="loading"/>
+   <div class="product-detail-container">
+     <!-- Loading State -->
+     <div v-if="loading" class="loading-state">
+-      <p>Loading product...</p>
+     </div>
+ 
+     <!-- Error State -->
+@@ -41,41 +42,34 @@ onMounted(async () => {
+     <div v-else-if="product" class="product-detail">
+       <div class="product-image">
+         <img :src="product.immagine_url" :alt="product.nome" />
+-        <span v-if="product.sconto > 0" class="badge">
+-          Sconto {{ product.sconto }}%
+-        </span>
++        <span v-if="product.sconto > 0" class="badge"> Sconto {{ product.sconto }}% </span>
+       </div>
+ 
+       <div class="product-info">
+         <span class="category">{{ product.categoria }}</span>
+         <h1>{{ product.nome }}</h1>
+         <p class="description">{{ product.descrizione }}</p>
+-        
++
+         <div class="price-container">
+-          <span v-if="product.sconto > 0" class="old-price">
+-            €{{ product.prezzo }}
+-          </span>
++          <span v-if="product.sconto > 0" class="old-price"> €{{ product.prezzo }} </span>
+           <span class="new-price">€{{ product.prezzo_scontato || product.prezzo }}</span>
+         </div>
+ 
+         <div class="product-meta">
+           <p><strong>Materiale:</strong> {{ product.materiale }}</p>
+-          <p><strong>Disponibilità:</strong> 
++          <p>
++            <strong>Disponibilità:</strong>
+             <span :class="product.disponibilita ? 'in-stock' : 'out-of-stock'">
+               {{ product.disponibilita ? 'In stock' : 'Out of stock' }}
+             </span>
+           </p>
+           <p v-if="product.taglie_disponibili && product.taglie_disponibili.length">
+-            <strong>Taglie:</strong> 
++            <strong>Taglie:</strong>
+             {{ product.taglie_disponibili.join(', ') }}
+           </p>
+         </div>
+ 
+-        <button 
+-          class="add-to-cart-btn" 
+-          @click="addToCart"
+-          :disabled="!product.disponibilita"
+-        >
++        <button class="add-to-cart-btn" @click="addToCart" :disabled="!product.disponibilita">
+           {{ product.disponibilita ? 'Aggiungi al Carrello' : 'Non Disponibile' }}
+         </button>
+       </div>
+@@ -120,7 +114,7 @@ onMounted(async () => {
+   background: white;
+   padding: 30px;
+   border-radius: 8px;
+-  box-shadow: 0 2px 10px rgba(0,0,0,0.1);
++  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+ }
+ 
+ .product-image {
+@@ -231,4 +225,3 @@ h1 {
+   }
+ }
+ </style>
+-
+diff --git a/frontend-vue/src/views/HomeView.vue b/frontend-vue/src/views/HomeView.vue
+index f7576f2..af2547a 100644
+--- a/frontend-vue/src/views/HomeView.vue
++++ b/frontend-vue/src/views/HomeView.vue
+@@ -4,6 +4,8 @@ import ProductCard from '@/components/ProductCard.vue'
+ // import getProducts from '@/services/productService'
+ import { useCartStore } from '@/stores/cartStore'
+ import { get } from '@/plugins/api'
++import LoadingSpinner from '@/components/LoadingSpinner.vue'
++
+ 
+ const cartStore = useCartStore()
+ 
+@@ -43,15 +45,17 @@ console.log({ cart: cartStore.totalItems })
+ 
+ const products = ref([])
+ const error = ref(null)
+-const loading = ref(true)
++const loading = ref(false)
+ 
+ onMounted(async () => {
+   try {
+     // products.value = await getProducts()
++    loading.value = true
+     const token = localStorage.getItem('access_token')
+     const data = await get('/api/v1/scarpe', {
+       Authorization: `Bearer ${token}`,
+     })
++    loading.value = false
+     console.log({ dataresults: data.results })
+     products.value = data.results
+   } catch (err) {
+@@ -64,7 +68,9 @@ onMounted(async () => {
+ </script>
+ 
+ <template>
++  <LoadingSpinner v-if="loading"/>
+   <main class="grid">
++    
+     <ProductCard v-for="product in products" :key="product.id">
+       <template #image>
+         <div class="badge-wrapper">
+@@ -119,6 +125,7 @@ onMounted(async () => {
+ }
+ .add-btn {
+   padding: 10px;
++  cursor: pointer;
+ }
+ 
+ .old-price {
+diff --git a/frontend-vue/src/views/ProductsView.vue b/frontend-vue/src/views/ProductsView.vue
+index 6f9b6d0..6cd8be4 100644
+--- a/frontend-vue/src/views/ProductsView.vue
++++ b/frontend-vue/src/views/ProductsView.vue
+@@ -3,9 +3,11 @@ import Grid from '@/components/Grid.vue'
+ import ProductList from '@/components/ProductList.vue'
+ import { onMounted, ref } from 'vue'
+ import { get } from '@/plugins/api'
++import LoadingSpinner from '@/components/LoadingSpinner.vue'
+ 
+ const libri = ref([])
+ const autori = ref([])
++const loading = ref(false)
+ 
+ const gridLibriColumns = ['titolo', 'anno', 'genere', 'autore.nome']
+ const radioSelection = ['titolo', 'anno', 'genere', 'autore.nome', 'all']
+@@ -14,50 +16,25 @@ const searchQuery = ref('')
+ const selectedField = ref('all')
+ console.log({ selectedField: selectedField.value })
+ onMounted(async () => {
+-  // fetch('http://localhost:8000/api/v1/libri/')
+-  //   .then((response) => {
+-  //     // Controllo manuale dello stato HTTP
+-  //     if (!response.ok) {
+-  //       throw new Error(`Errore HTTP: ${response.status}`)
+-  //     }
+-     const data = await get ('/api/v1/libri/')
+-      // Converte la risposta in JSON (ritorna una nuova Promise)
+-      // return response.json()
+-      console.log('hello world')
+-      console.log({libri: data})
+-      libri.value = data.results
+-    // })
+-    // .then((data) => {
+-    //   // Aggiorna lo stato reattivo con i dati ricevuti
+-    //   console.log({ dataResults: data.results })
+-    //   console.log({ libriKeys: Object.keys(data.results[0]) })
+-    //   libri.value = data.results
+-    // })
++  loading.value = true
++  const data = await get('/api/v1/libri/')
+ 
+-  console.log(libri.value)
++  console.log({ libri: data })
+ 
+-  // fetch('http://localhost:8000/api/v1/autori')
+-  //   .then((response) => {
+-  //     // Controllo manuale dello stato HTTP
+-  //     if (!response.ok) {
+-  //       throw new Error(`Errore HTTP: ${response.status}`)
+-  //     }
+-  //     // Converte la risposta in JSON (ritorna una nuova Promise)
+-  //     return response.json()
+-  //   })
+-  //   .then((data) => {
+-  //     // Aggiorna lo stato reattivo con i dati ricevuti
+-  //     autori.value = data.results
+-  //   })
++  loading.value = false
++  libri.value = data.results
++ 
++  console.log(libri.value)
+ 
+   const autori = await get('/api/v1/autori/')
+-  console.log({autori: autori})
++  console.log({ autori: autori })
+   autori.value = autori.results
+   // console.log(autori.value);
+ })
+ </script>
+ 
+ <template>
++  
+   <main class="main">
+     <form id="search">
+       Cerca <input id="search-input" name="query" v-model="searchQuery" />
+@@ -68,7 +45,9 @@ onMounted(async () => {
+     </form>
+ 
+     <ProductList></ProductList>
++    <LoadingSpinner v-if="loading"/>
+     <Grid
++    
+       style="width: 45%"
+       :data="libri"
+       :columns="gridLibriColumns"
